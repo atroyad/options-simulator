@@ -1,0 +1,2691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>MSTR Options Income Simulator</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:#0d1117; --sur:#161b22; --sur2:#21262d; --bdr:#30363d;
+  --txt:#c9d1d9; --mut:#8b949e;
+  --grn:#3fb950; --red:#f85149; --blu:#58a6ff;
+  --ylw:#e3b341; --pur:#bc8cff; --org:#f0883e;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;background:var(--bg);color:var(--txt);
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12px;}
+
+header{
+  height:40px;padding:0 14px;border-bottom:1px solid var(--bdr);
+  background:var(--sur);display:flex;align-items:center;gap:10px;flex-shrink:0;
+}
+header h1{font-size:14px;font-weight:600;}
+header p{font-size:10px;color:var(--mut);}
+.badge{background:var(--blu);color:#000;padding:2px 7px;border-radius:8px;
+  font-size:9px;font-weight:700;margin-left:auto;}
+
+/* ── ROOT ── */
+.app{display:flex;height:calc(100vh - 40px);overflow:hidden;user-select:none;}
+
+/* ── SIDEBAR ── */
+#sidebar{
+  width:250px;min-width:170px;max-width:440px;flex-shrink:0;
+  background:var(--sur);border-right:1px solid var(--bdr);
+  overflow-y:auto;display:flex;flex-direction:column;gap:5px;padding:6px;
+}
+
+/* ── DRAG HANDLES ── */
+.rz{flex-shrink:0;background:var(--bdr);transition:background .15s;position:relative;}
+.rz::after{content:'';position:absolute;background:transparent;}
+.rz-v{width:4px;cursor:col-resize;}
+.rz-v::after{top:0;bottom:0;left:-4px;right:-4px;}
+.rz-h{height:4px;cursor:row-resize;}
+.rz-h::after{left:0;right:0;top:-4px;bottom:-4px;}
+.rz:hover,.rz.dragging{background:var(--blu);}
+
+/* ── MAIN ── */
+#main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;padding:6px;gap:0;}
+#midRow{flex:1;min-height:0;display:flex;overflow:hidden;margin:4px 0;}
+#chartCard{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;}
+#chartCard .bd{flex:1;min-height:0;display:flex;flex-direction:column;padding:6px 8px;}
+.chart-wrap{flex:1;position:relative;min-height:0;}
+#builderCard{width:320px;min-width:180px;max-width:700px;flex-shrink:0;
+  display:flex;flex-direction:column;overflow:hidden;}
+#builderCard .bd{flex:1;overflow-y:auto;padding:6px 8px;}
+#hmCard{flex-shrink:0;height:140px;min-height:70px;
+  display:flex;flex-direction:column;overflow:hidden;}
+#hmCard .bd{flex:1;min-height:0;display:flex;flex-direction:column;gap:3px;padding:5px 8px;}
+#heatmapCanvas{display:block;cursor:crosshair;width:100%;flex:1;min-height:0;}
+
+/* ── CARDS ── */
+.card{background:var(--sur);border:1px solid var(--bdr);border-radius:6px;overflow:hidden;}
+.hd{height:28px;padding:0 8px;border-bottom:1px solid var(--bdr);background:var(--sur2);
+  display:flex;align-items:center;justify-content:space-between;gap:6px;
+  flex-wrap:wrap;flex-shrink:0;}
+.hd h3{font-size:10px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.4px;color:var(--mut);white-space:nowrap;}
+.bd{padding:8px;}
+
+/* ── CONTROLS ── */
+.lbl{display:block;font-size:9px;color:var(--mut);text-transform:uppercase;
+  letter-spacing:.3px;margin:5px 0 2px;}
+.lbl:first-child{margin-top:0;}
+input[type=number],input[type=date],select{
+  background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);
+  padding:4px 6px;border-radius:3px;font-size:11px;width:100%;outline:none;
+  -webkit-appearance:none;appearance:none;}
+input:focus,select:focus{border-color:var(--blu);}
+input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
+  height:16px;touch-action:pan-y;}
+.row{display:flex;gap:6px;align-items:center;}
+.pval{font-family:monospace;color:var(--blu);font-weight:700;font-size:14px;
+  min-width:48px;text-align:right;flex-shrink:0;}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:5px;}
+
+/* ── GREEKS ── */
+.g4{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
+.gi{background:var(--sur2);border-radius:4px;padding:4px 6px;}
+.gn{font-size:8px;color:var(--mut);text-transform:uppercase;letter-spacing:.3px;}
+.gv{font-size:14px;font-weight:700;font-family:monospace;margin-top:1px;}
+.pos{color:var(--grn);}.neg{color:var(--red);}.neu{color:var(--txt);}
+
+/* ── INCOME SUMMARY ── */
+.inc-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
+.inc-item{background:var(--sur2);border-radius:4px;padding:5px 7px;}
+.inc-label{font-size:8px;color:var(--mut);text-transform:uppercase;letter-spacing:.3px;}
+.inc-val{font-size:14px;font-weight:700;font-family:monospace;margin-top:1px;}
+.inc-note{font-size:9px;color:var(--mut);margin-top:1px;}
+
+/* Budget bar */
+.budget-bar{background:var(--sur2);border-radius:3px;height:6px;margin-top:4px;overflow:hidden;}
+.budget-fill{height:100%;border-radius:3px;transition:width .3s;}
+
+/* ── BUTTONS ── */
+.btn{display:inline-flex;align-items:center;gap:3px;padding:3px 8px;
+  border:1px solid var(--bdr);border-radius:3px;background:var(--sur2);
+  color:var(--txt);font-size:10px;cursor:pointer;transition:background .1s;
+  user-select:none;touch-action:manipulation;white-space:nowrap;}
+.btn:hover{background:var(--bdr);}
+.btnp{background:var(--blu);color:#000;border-color:var(--blu);font-weight:700;}
+.btnp:hover{background:#79c0ff;}
+.btnd{color:var(--red);}
+.btnd:hover{background:rgba(248,81,73,.1);border-color:var(--red);}
+
+/* ── TAGS ── */
+.tag{display:inline-block;padding:1px 4px;border-radius:3px;
+  font-size:8px;font-weight:700;text-transform:uppercase;}
+.tc{background:rgba(88,166,255,.15);color:var(--blu);}
+.tp{background:rgba(188,140,255,.15);color:var(--pur);}
+.tb{background:rgba(63,185,80,.15);color:var(--grn);}
+.ts{background:rgba(248,81,73,.15);color:var(--red);}
+
+/* ── PRESETS ── */
+.presets{display:flex;gap:5px;overflow-x:auto;}
+.pc{flex:1;min-width:100px;max-width:190px;flex-shrink:0;
+  background:var(--sur2);border:1px solid var(--bdr);border-radius:5px;
+  padding:5px 7px;cursor:pointer;transition:border-color .1s;touch-action:manipulation;}
+.pc:hover,.pc:active{border-color:var(--blu);background:rgba(88,166,255,.04);}
+.pc h4{font-size:10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pc p{font-size:9px;color:var(--mut);line-height:1.3;margin-top:1px;}
+
+/* ── TOGGLES ── */
+.tgls{display:flex;gap:3px;flex-wrap:wrap;}
+.tgl{padding:1px 7px;border:1px solid var(--bdr);border-radius:8px;
+  background:transparent;color:var(--mut);font-size:9px;cursor:pointer;}
+.tgl.on{background:var(--blu);color:#000;border-color:var(--blu);font-weight:700;}
+
+/* ── CHART RANGE ROW ── */
+.sc-row{display:flex;align-items:center;gap:5px;flex-shrink:0;padding-bottom:5px;flex-wrap:wrap;}
+.sc-row label{font-size:9px;color:var(--mut);text-transform:uppercase;min-width:55px;}
+
+/* ── ADD LEG FORM ── */
+.af{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;
+  padding:7px;background:var(--sur2);border-radius:5px;margin-bottom:7px;}
+.af .fw{grid-column:1/-1;display:flex;gap:4px;justify-content:flex-end;}
+
+/* ── LEGS TABLE ── */
+.ts-wrap{overflow:auto;flex:1;}
+.lt{width:100%;border-collapse:collapse;font-size:10px;min-width:500px;}
+.lt th{text-align:left;padding:3px 5px;border-bottom:1px solid var(--bdr);
+  color:var(--mut);font-size:9px;font-weight:500;text-transform:uppercase;white-space:nowrap;}
+.lt td{padding:3px 5px;border-bottom:1px solid var(--bdr);white-space:nowrap;}
+.lt tr:last-child td{border:none;}
+.lt tr:hover td{background:var(--sur2);}
+
+/* ── HEATMAP ── */
+.hm-leg{display:flex;gap:10px;align-items:center;font-size:9px;color:var(--mut);flex-shrink:0;}
+.mono{font-family:monospace;}
+.empty{color:var(--mut);text-align:center;padding:12px;font-size:10px;}
+
+/* context note style */
+.ctx-note{font-size:9px;color:var(--mut);line-height:1.5;
+  background:rgba(88,166,255,.05);border:1px solid rgba(88,166,255,.15);
+  border-radius:4px;padding:5px 7px;margin-top:5px;}
+
+/* leverage pill buttons */
+.lev-btns{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;}
+.lev-btn{padding:2px 8px;border:1px solid var(--bdr);border-radius:8px;
+  background:transparent;color:var(--mut);font-size:10px;cursor:pointer;}
+.lev-btn.on{background:var(--org);color:#000;border-color:var(--org);font-weight:700;}
+
+/* ── SIDEBAR TABS ── */
+#sidebar{display:flex;flex-direction:column;}
+.sb-tabs{display:flex;border-bottom:1px solid var(--bdr);flex-shrink:0;background:var(--sur2);}
+.sb-tab{flex:1;padding:6px 4px;border:none;border-bottom:2px solid transparent;
+  background:transparent;color:var(--mut);font-size:10px;cursor:pointer;font-weight:500;
+  transition:color .1s;}
+.sb-tab:hover{color:var(--txt);}
+.sb-tab.on{color:var(--blu);border-bottom-color:var(--blu);font-weight:700;}
+.sb-pane{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:5px;padding:6px;}
+
+/* ── BUILDER TABS ── */
+.tab-btn{padding:2px 10px;border:none;border-bottom:2px solid transparent;
+  background:transparent;color:var(--mut);font-size:10px;cursor:pointer;font-weight:500;}
+.tab-btn.on{color:var(--blu);border-bottom-color:var(--blu);}
+
+/* ── LEAP TABLE ── */
+.leap-tbl{width:100%;border-collapse:collapse;font-size:10px;min-width:600px;}
+.leap-tbl th{text-align:left;padding:3px 5px;border-bottom:1px solid var(--bdr);
+  color:var(--mut);font-size:9px;font-weight:500;text-transform:uppercase;white-space:nowrap;}
+.leap-tbl td{padding:3px 5px;border-bottom:1px solid var(--bdr);white-space:nowrap;vertical-align:middle;}
+.leap-tbl tr:hover td{background:rgba(255,255,255,.03);}
+
+/* ── ROLL SIM ── */
+.rs-row{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px;}
+.rs-cell{background:var(--sur2);border-radius:4px;padding:4px 6px;}
+.rs-label{font-size:8px;color:var(--mut);text-transform:uppercase;letter-spacing:.3px;}
+.rs-val{font-size:12px;font-weight:700;font-family:monospace;margin-top:1px;}
+
+@media(max-width:1023px){
+  .app{flex-direction:column;height:auto;overflow:visible;}
+  #sidebar{width:100%!important;max-width:none;border-right:none;border-bottom:1px solid var(--bdr);}
+  #main{padding:8px;gap:8px;}
+  #midRow{flex-direction:column;height:auto;margin:0;}
+  #chartCard{height:300px;flex-shrink:0;}
+  #builderCard{width:100%!important;max-width:none;height:250px;flex-shrink:0;}
+  #hmCard{height:200px!important;}
+  .rz{display:none;}
+  .presets{flex-wrap:wrap;}
+  .pc{max-width:none;flex:1 1 calc(33% - 4px);}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>MSTR Options Income Simulator</h1>
+    <p>Options-only P&amp;L · Drag panel edges to resize</p>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-wrap:wrap">
+    <span style="font-size:9px;color:var(--mut)">Mode:</span>
+    <button class="tgl on" id="modeSim"  onclick="setMode('sim')" >Simulation</button>
+    <button class="tgl"    id="modeLive" onclick="setMode('live')">Live Data</button>
+    <!-- Live data source selector — only shown in Live mode -->
+    <div id="liveSrcRow" style="display:none;align-items:center;gap:4px;flex-wrap:wrap">
+      <span style="font-size:9px;color:var(--mut)">Source:</span>
+      <button class="tgl on" id="srcYahoo" onclick="setLiveSource('yahoo')" style="font-size:9px;padding:1px 6px">Yahoo</button>
+      <button class="tgl"    id="srcSaxo"  onclick="setLiveSource('saxo')"  style="font-size:9px;padding:1px 6px">Saxo Bank</button>
+      <!-- Saxo controls — shown only when Saxo selected -->
+      <div id="saxoControls" style="display:none;align-items:center;gap:4px;flex-wrap:wrap">
+        <span style="font-size:9px;color:var(--mut)">Env:</span>
+        <!-- SIM = developer.saxo token; Live = personal account OAuth -->
+        <button class="tgl on" id="saxoEnvSim"  onclick="setSaxoEnv('sim')"  style="font-size:9px;padding:1px 6px">SIM</button>
+        <button class="tgl"    id="saxoEnvLive" onclick="setSaxoEnv('live')" style="font-size:9px;padding:1px 6px">Live Acct</button>
+        <!-- SIM: paste token from developer.saxo OpenAPI Explorer -->
+        <!-- SIM: paste token directly (simplest, always works) -->
+        <div id="saxoSimUI" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+          <input id="saxoTokenInput" type="password" placeholder="Paste SIM Bearer token"
+            style="font-size:9px;padding:2px 5px;width:150px;background:var(--sur2);
+              border:1px solid var(--bdr);color:var(--txt);border-radius:3px"
+            oninput="state.saxoToken=this.value.trim()"
+            title="Get token: developer.saxo → OpenAPI Explorer → log in → copy Bearer token">
+          <button class="btn" style="font-size:9px;padding:2px 7px"
+            onclick="if(state.saxoToken){fetchLiveData();}else{alert('Paste your SIM token first.');}"
+            >⟳ Fetch</button>
+          <button style="font-size:9px;padding:2px 5px;border:1px solid var(--bdr);
+            border-radius:3px;background:var(--sur2);color:var(--mut);cursor:pointer"
+            onclick="window.open('https://www.developer.saxo/openapi/token','_blank')"
+            title="Opens Saxo token page — log in with developer.saxo account, copy the Bearer token">
+            Get token ↗</button>
+          <span id="saxoAuthStatus" style="font-size:9px;color:var(--mut)"></span>
+        </div>
+        <!-- Live: same flow, different endpoint -->
+        <div id="saxoLiveUI" style="display:none;align-items:center;gap:4px">
+          <input id="saxoClientId" type="text" placeholder="Live app client_id"
+            style="font-size:9px;padding:2px 5px;width:120px;background:var(--sur2);
+              border:1px solid var(--bdr);color:var(--txt);border-radius:3px"
+            oninput="state.saxoClientId=this.value"
+            title="client_id from your live app at developer.saxo.com → Apps">
+          <button class="btn" style="font-size:9px;padding:2px 7px"
+            onclick="saxoOAuthLogin()"
+            title="Opens Saxo live login popup — uses personal account + OPRA subscription">
+            🔐 Login</button>
+          <button style="font-size:9px;padding:2px 5px;border:1px solid var(--bdr);
+            border-radius:3px;background:var(--sur2);color:var(--mut);cursor:pointer"
+            onclick="showRedirectUri()"
+            title="Show exact redirect URI to paste into Saxo app settings">URI?</button>
+          <button style="font-size:9px;padding:2px 5px;border:1px solid var(--bdr);
+            border-radius:3px;background:var(--sur2);color:var(--ylw);cursor:pointer"
+            onclick="saxoDebugUrl()"
+            title="Show full auth URL — open in new tab to test directly">Debug URL</button>
+          <span id="saxoAuthStatusLive" style="font-size:9px;color:var(--mut)"></span>
+        </div>
+      </div>
+    </div>
+    <button class="btn" id="liveBtn" style="display:none;font-size:10px" onclick="fetchLiveData()">⟳ Fetch MSTR</button>
+    <span id="liveStatus" style="font-size:9px;color:var(--mut);display:none"></span>
+  </div>
+  <div class="badge" id="modeBadge">Simulation</div>
+</header>
+
+<div class="app">
+
+<!-- ══ SIDEBAR ══════════════════════════════════════════════ -->
+<aside id="sidebar">
+
+  <div class="sb-tabs">
+    <button class="sb-tab on" data-tab="setup"   onclick="sbTab(this)">Setup</button>
+    <button class="sb-tab"    data-tab="summary" onclick="sbTab(this)">Summary</button>
+    <button class="sb-tab"    data-tab="rollsim" onclick="sbTab(this)">Roll Sim</button>
+  </div>
+
+  <!-- ══ TAB: SETUP ══ -->
+  <div class="sb-pane" id="sbSetup">
+
+    <div class="card">
+      <div class="hd"><h3>Market Parameters</h3></div>
+      <div class="bd">
+        <label class="lbl">MSTR Spot Price (USD)</label>
+        <div class="row">
+          <input type="range" id="sSpot" min="10" max="600" step="1" value="200" oninput="syncSpot(this.value)">
+          <span class="pval" id="dSpot">$200</span>
+        </div>
+        <input type="number" id="iSpot" value="200" step="5" min="1" onchange="syncSpot(this.value)" style="margin-top:3px">
+
+        <label class="lbl">Implied Volatility %</label>
+        <div class="row">
+          <input type="range" id="sIV" min="20" max="300" step="1" value="80" oninput="syncIV(this.value)">
+          <span class="pval" id="dIV">80%</span>
+        </div>
+        <input type="number" id="iIV" value="80" step="5" min="5" max="500" onchange="syncIV(this.value)" style="margin-top:3px">
+
+        <div class="pair" style="margin-top:5px">
+          <div>
+            <label class="lbl">Risk-Free Rate %</label>
+            <input type="number" id="iRate" value="4.5" step="0.25" min="0" onchange="state.rate=+this.value/100;renderAll()">
+          </div>
+          <div>
+            <label class="lbl">Sim Date</label>
+            <input type="date" id="iDate" value="2026-04-09" onchange="state.simDate=new Date(this.value+'T12:00:00');renderAll()">
+          </div>
+        </div>
+
+        <!-- IV Surface selector -->
+        <label class="lbl" style="margin-top:8px">IV Surface (P&L + Heatmap)</label>
+        <div style="display:flex;gap:3px;margin-bottom:4px">
+          <button id="ivsFlatBtn" onclick="setIVSurface('flat')"
+            style="flex:1;padding:3px 0;font-size:9px;border:1px solid var(--bdr);
+              border-radius:3px;cursor:pointer;background:var(--blu);color:#000;font-weight:700">
+            Flat IV</button>
+          <button id="ivsSmileBtn" onclick="setIVSurface('smile')"
+            style="flex:1;padding:3px 0;font-size:9px;border:1px solid var(--bdr);
+              border-radius:3px;cursor:pointer;background:var(--sur2);color:var(--mut)">
+            Vol Smile</button>
+        </div>
+        <div id="smileParamsUI" style="display:none;background:var(--sur2);border:1px solid var(--bdr);
+          border-radius:4px;padding:5px 7px;font-size:9px;">
+          <div style="color:var(--mut);margin-bottom:4px;line-height:1.4">
+            Smile shape applied per-strike. Legs with manual prices keep their back-solved IV.
+          </div>
+          <div class="row" style="gap:4px;margin-bottom:3px">
+            <span style="color:var(--mut);min-width:44px">Skew</span>
+            <input type="range" id="smileSkewIn" min="-0.60" max="0.10" step="0.01" value="-0.12"
+              style="flex:1" oninput="state.smileSkew=+this.value;document.getElementById('smileSkewVal').textContent=(+this.value).toFixed(2);renderAll()">
+            <span id="smileSkewVal" style="font-family:monospace;color:var(--blu);min-width:34px;text-align:right">-0.12</span>
+          </div>
+          <div class="row" style="gap:4px">
+            <span style="color:var(--mut);min-width:44px">Conv</span>
+            <input type="range" id="smileConvIn" min="0.0" max="1.0" step="0.01" value="0.20"
+              style="flex:1" oninput="state.smileConv=+this.value;document.getElementById('smileConvVal').textContent=(+this.value).toFixed(2);renderAll()">
+            <span id="smileConvVal" style="font-family:monospace;color:var(--blu);min-width:34px;text-align:right">0.20</span>
+          </div>
+          <div style="color:var(--mut);margin-top:4px;font-size:8px;line-height:1.4">
+            Skew: put premium (more negative = steeper left wing).<br>
+            Conv: curvature — both wings raised (0 = pure skew, 0.5+ = strong smile).<br>
+            In Live mode, these auto-fit to market data.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="hd"><h3>Share Ownership (context)</h3></div>
+      <div class="bd">
+        <div class="row" style="flex-wrap:wrap;gap:4px">
+          <input type="number" id="iShares" value="700" step="100" min="0" style="width:65px" onchange="state.shares=+this.value;renderAll()">
+          <span style="color:var(--mut);font-size:10px">shares owned</span>
+        </div>
+        <div class="ctx-note" id="coveredNote">
+          700 shares → up to <strong style="color:var(--blu)">7</strong> covered call contracts without naked exposure.
+        </div>
+        <div style="font-size:9px;color:var(--mut);margin-top:5px;line-height:1.5">
+          Long-term hold — stock P&amp;L not tracked here. Shares define how many calls are <em>covered</em>.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="hd"><h3>Cash &amp; Leverage</h3></div>
+      <div class="bd">
+        <label class="lbl">Cash Available (USD)</label>
+        <input type="number" id="iCash" value="16000" step="1000" min="0" onchange="state.cash=+this.value;renderAll()">
+        <label class="lbl" style="margin-top:7px">Leverage (for short puts)</label>
+        <div class="lev-btns" id="levBtns">
+          <button class="lev-btn on" data-lev="1"   onclick="setLev(this)">1× Cash-secured</button>
+          <button class="lev-btn"    data-lev="1.5" onclick="setLev(this)">1.5× Reg-T</button>
+          <button class="lev-btn"    data-lev="2"   onclick="setLev(this)">2× Margin</button>
+          <button class="lev-btn"    data-lev="3"   onclick="setLev(this)">3× Portfolio margin</button>
+        </div>
+        <div style="margin-top:8px">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mut);margin-bottom:3px">
+            <span>Capital required</span>
+            <span id="capReqVal" style="font-family:monospace;color:var(--txt)">—</span>
+          </div>
+          <div class="budget-bar">
+            <div class="budget-fill" id="budgetFill" style="width:0%;background:var(--grn)"></div>
+          </div>
+          <div style="font-size:9px;color:var(--mut);margin-top:3px" id="budgetNote">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:rgba(227,179,65,.06);border:1px solid rgba(227,179,65,.2);
+      border-radius:5px;padding:6px 8px;font-size:9px;color:var(--mut);line-height:1.5">
+      <strong style="color:var(--ylw)">Model note:</strong> Black-Scholes (European approx). MSTR options are American-style. IV 80–150%+ is typical for MSTR.
+    </div>
+
+  </div><!-- /sbSetup -->
+
+  <!-- ══ TAB: SUMMARY ══ -->
+  <div class="sb-pane" id="sbSummary" style="display:none">
+
+    <div class="card">
+      <div class="hd"><h3>Portfolio Greeks</h3></div>
+      <div class="bd">
+        <div class="g4">
+          <div class="gi"><div class="gn">Delta Δ</div><div class="gv neu" id="gDelta">—</div></div>
+          <div class="gi"><div class="gn">Gamma Γ</div><div class="gv neu" id="gGamma">—</div></div>
+          <div class="gi"><div class="gn">Theta/day</div><div class="gv neu" id="gTheta">—</div></div>
+          <div class="gi"><div class="gn">Vega/1%IV</div><div class="gv neu" id="gVega">—</div></div>
+        </div>
+        <div style="font-size:9px;color:var(--mut);margin-top:6px;line-height:1.6">
+          <strong>Δ</strong> price sensitivity per $1 MSTR move ·
+          <strong>Γ</strong> rate of delta change ·
+          <strong>Θ</strong> daily time decay (positive = earning) ·
+          <strong>V</strong> gain per 1% IV rise
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="hd"><h3>Income Summary</h3></div>
+      <div class="bd">
+        <div class="inc-grid">
+          <div class="inc-item">
+            <div class="inc-label">Net Premium</div>
+            <div class="inc-val pos" id="iNetPrem">—</div>
+            <div class="inc-note">collected upfront</div>
+          </div>
+          <div class="inc-item">
+            <div class="inc-label">Annualised Yield</div>
+            <div class="inc-val pos" id="iAnnYield">—</div>
+            <div class="inc-note">on capital deployed</div>
+          </div>
+          <div class="inc-item">
+            <div class="inc-label">Prob Max Profit</div>
+            <div class="inc-val neu" id="iProbMax">—</div>
+            <div class="inc-note">all legs expire OTM</div>
+          </div>
+          <div class="inc-item">
+            <div class="inc-label">Nearest Expiry</div>
+            <div class="inc-val neu" id="iDTE">—</div>
+            <div class="inc-note">days to expiry</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /sbSummary -->
+
+  <!-- ══ TAB: ROLL SIM ══ -->
+  <div class="sb-pane" id="sbRollsim" style="display:none;overflow:hidden">
+
+    <div class="card" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
+      <div class="hd"><h3>Roll Simulator</h3></div>
+      <div class="bd" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;padding:6px 8px">
+
+        <!-- Fixed inputs — never scroll -->
+        <div style="flex-shrink:0">
+          <div class="pair" style="margin-bottom:4px">
+            <div>
+              <label class="lbl" style="margin-top:0">Type</label>
+              <select id="rsType" onchange="rsState.type=this.value;renderRollSim()">
+                <option value="call">Call</option>
+                <option value="put">Put</option>
+              </select>
+            </div>
+            <div>
+              <label class="lbl" style="margin-top:0">Position</label>
+              <select id="rsAction" onchange="rsState.action=this.value;renderRollSim()">
+                <option value="buy">Long (bought)</option>
+                <option value="sell">Short (sold)</option>
+              </select>
+            </div>
+          </div>
+          <div class="pair" style="margin-bottom:4px">
+            <div>
+              <label class="lbl" style="margin-top:0">Strike $</label>
+              <input type="number" id="rsK0" value="160" step="5" oninput="rsState.K0=+this.value;renderRollSim()">
+            </div>
+            <div>
+              <label class="lbl" style="margin-top:0" id="rsP0Label">Prem received $</label>
+              <input type="number" id="rsPrem0" value="2.20" step="0.1" oninput="rsState.prem0=+this.value;renderRollSim()">
+            </div>
+          </div>
+          <div class="pair" style="margin-bottom:4px">
+            <div>
+              <label class="lbl" style="margin-top:0">MSTR at roll $</label>
+              <input type="number" id="rsS1" value="150" step="5" oninput="rsState.S1=+this.value;renderRollSim()">
+            </div>
+            <div>
+              <label class="lbl" style="margin-top:0">IV at roll %</label>
+              <input type="number" id="rsIV1" value="120" step="1" oninput="rsState.iv1=+this.value;renderRollSim()">
+            </div>
+          </div>
+          <div class="pair" style="margin-bottom:4px">
+            <div>
+              <label class="lbl" style="margin-top:0">DTE left on old</label>
+              <input type="number" id="rsDTE1" value="30" step="5" oninput="rsState.dte1=+this.value;renderRollSim()" title="Days remaining on your existing option at the time of rolling">
+            </div>
+            <div>
+              <label class="lbl" style="margin-top:0">DTE of new option</label>
+              <input type="number" id="rsDTE2" value="60" step="5" oninput="rsState.dte2=+this.value;renderRollSim()" title="Days to expiry of the NEW option you sell/buy when rolling">
+            </div>
+          </div>
+        </div>
+
+        <!-- Results — scrollable both axes -->
+        <div id="rollSimResults" style="flex:1;min-height:0;overflow:auto;margin-top:4px;border-top:1px solid var(--bdr);padding-top:4px"></div>
+      </div>
+    </div>
+
+    <div style="background:rgba(88,166,255,.05);border:1px solid rgba(88,166,255,.15);
+      border-radius:4px;padding:5px 7px;font-size:9px;color:var(--mut);line-height:1.6;flex-shrink:0">
+      <strong style="color:var(--blu)">Long</strong> = bought (LEAP) ·
+      <strong style="color:var(--pur)">Short</strong> = sold (CC / CSP) ·
+      Roll targets ±2 steps from ATM.
+    </div>
+
+  </div><!-- /sbRollsim -->
+
+</aside>
+
+<div class="rz rz-v" id="rz-sb"></div>
+
+<!-- ══ MAIN ═════════════════════════════════════════════════ -->
+<div id="main">
+
+  <!-- Presets strip -->
+  <div class="card" id="presetsRow">
+    <div class="hd">
+      <h3>Income Strategy Presets</h3>
+      <button class="btn" onclick="state.legs=[];state.nid=1;renderAll()">Clear</button>
+    </div>
+    <div class="bd" style="padding:5px 7px">
+      <div class="presets">
+        <div class="pc" onclick="loadPreset('cc_monthly')">
+          <h4>Monthly CC ×7</h4>
+          <p>Sell 7 covered calls · 30 DTE · ~Δ0.20</p>
+        </div>
+        <div class="pc" onclick="loadPreset('cc_weekly')">
+          <h4>Weekly CC ×7</h4>
+          <p>Sell 7 covered calls · 7 DTE · faster theta</p>
+        </div>
+        <div class="pc" onclick="loadPreset('csp')">
+          <h4>Cash-Secured Put</h4>
+          <p>Sell put below spot · accumulate + income</p>
+        </div>
+        <div class="pc" onclick="loadPreset('strangle')">
+          <h4>Strangle</h4>
+          <p>Sell OTM call + OTM put · premium both sides</p>
+        </div>
+        <div class="pc" onclick="loadPreset('condor')">
+          <h4>Iron Condor</h4>
+          <p>Sell strangle · buy wings · defined risk</p>
+        </div>
+        <div class="pc" onclick="loadPreset('wheel')" style="border-color:var(--blu)">
+          <h4 style="color:var(--blu)">Wheel ★</h4>
+          <p>CSP to accumulate + CC for income</p>
+        </div>
+        <div class="pc" onclick="loadPreset('leap')" style="border-color:var(--pur)">
+          <h4 style="color:var(--pur)">LEAP Call</h4>
+          <p>Buy Jan 2028 ATM call · leveraged upside</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mid row: chart + builder -->
+  <div id="midRow">
+
+    <div class="card" id="chartCard">
+      <div class="hd" style="height:auto;padding:4px 8px;flex-wrap:wrap;gap:4px">
+        <!-- Chart view selector -->
+        <div style="display:flex;gap:2px;flex-shrink:0;border:1px solid var(--bdr);border-radius:4px;overflow:hidden">
+          <button id="cvPnl"   onclick="setChartView('pnl')"
+            style="padding:2px 8px;font-size:9px;border:none;cursor:pointer;
+              background:var(--blu);color:#000;font-weight:700">P&amp;L Chart</button>
+          <button id="cvSmile" onclick="setChartView('smile')"
+            style="padding:2px 8px;font-size:9px;border:none;cursor:pointer;
+              background:var(--sur2);color:var(--mut)">Vol Smile</button>
+        </div>
+        <h3 id="chartTitle" style="flex-shrink:0">Options P&amp;L vs MSTR Spot Price</h3>
+        <!-- Smile chart info bar — shown only in smile view -->
+        <div id="smileChartInfo" style="display:none;flex:1;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:9px;color:var(--mut)">Model params:</span>
+          <span style="font-size:9px">Skew <span id="smileInfoSkew" style="color:var(--blu);font-family:monospace">-0.12</span></span>
+          <span style="font-size:9px">Conv <span id="smileInfoConv" style="color:var(--blu);font-family:monospace">0.20</span></span>
+          <span style="font-size:9px;color:var(--mut)">(edit in Setup → IV Surface)</span>
+          <span id="smileFitBadge" style="display:none;font-size:8px;padding:1px 5px;border-radius:6px;
+            background:var(--grn);color:#000;font-weight:700">Live-fitted</span>
+        </div>
+        <!-- Fixed toggles — hidden in smile view -->
+        <div class="tgls" id="pnlControls" style="flex:1;min-width:0">
+          <button class="tgl on" data-k="expiry" onclick="togLine(this)">At Expiry</button>
+          <button class="tgl on" data-k="t0"     onclick="togLine(this)">Today</button>
+          <button class="tgl"    data-k="t30"    onclick="togLine(this)">+30d</button>
+          <button class="tgl"    data-k="t60"    onclick="togLine(this)">+60d</button>
+          <button class="tgl"    data-k="t90"    onclick="togLine(this)">+90d</button>
+          <button class="tgl"    data-k="shares" onclick="togLine(this)" title="vs equivalent shares">vs Shares</button>
+        </div>
+        <!-- Custom day lines — hidden in smile view -->
+        <div id="customDayControls" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+          <span style="font-size:9px;color:var(--mut);white-space:nowrap">+ days:</span>
+          <button class="btn" style="padding:1px 5px;font-size:9px" onclick="addCustomDay(1)">+1</button>
+          <button class="btn" style="padding:1px 5px;font-size:9px" onclick="addCustomDay(2)">+2</button>
+          <button class="btn" style="padding:1px 5px;font-size:9px" onclick="addCustomDay(5)">+5</button>
+          <button class="btn" style="padding:1px 5px;font-size:9px" onclick="addCustomDay(10)">+10</button>
+          <button class="btn" style="padding:1px 5px;font-size:9px" onclick="addCustomDay(15)">+15</button>
+          <input type="number" id="customDayInput" min="1" max="730" step="1" placeholder="d"
+            style="width:42px;padding:2px 4px;font-size:9px;background:var(--sur2);
+              border:1px solid var(--bdr);color:var(--txt);border-radius:3px"
+            onkeydown="if(event.key==='Enter'){addCustomDay(+this.value);}">
+          <button class="btn btnp" style="padding:1px 6px;font-size:9px"
+            onclick="addCustomDay(+document.getElementById('customDayInput').value)">Add</button>
+          <button class="btn" style="padding:1px 5px;font-size:9px;color:var(--mut)"
+            onclick="clearCustomDays()" title="Remove all custom lines">Clear</button>
+        </div>
+        <!-- Custom day pills row -->
+        <div id="customDayPills" style="display:flex;gap:3px;flex-wrap:wrap;width:100%;min-height:0"></div>
+      </div>
+      <div class="bd">
+        <div class="sc-row" id="spotRangeRow">
+          <label>Spot range</label>
+          <input type="range" id="rMin" min="5" max="400" value="50" style="flex:1"
+            oninput="document.getElementById('dMin').textContent='$'+this.value;renderChart()">
+          <span id="dMin" class="mono" style="font-size:10px;color:var(--mut);min-width:30px">$50</span>
+          <span style="color:var(--mut)">–</span>
+          <input type="range" id="rMax" min="100" max="1200" value="500" style="flex:1"
+            oninput="document.getElementById('dMax').textContent='$'+this.value;renderChart()">
+          <span id="dMax" class="mono" style="font-size:10px;color:var(--mut);min-width:38px">$500</span>
+        </div>
+        <div class="chart-wrap"><canvas id="pnlChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="rz rz-v" id="rz-mid"></div>
+
+    <div class="card" id="builderCard">
+      <div class="hd" style="height:auto;flex-wrap:wrap;gap:0;padding:0 8px 0 0">
+        <div style="display:flex;gap:0;border-bottom:0">
+          <button class="tab-btn on" data-tab="builder" onclick="switchBuilderTab(this)">Strategy Builder</button>
+          <button class="tab-btn" data-tab="leap" onclick="switchBuilderTab(this)">LEAP Strike Scanner</button>
+        </div>
+        <button class="btn btnp" id="addLegBtn" onclick="toggleForm()" style="margin-left:auto">+ Add Leg</button>
+      </div>
+
+      <!-- ── LEAP SCANNER TAB ── -->
+      <div id="leapContent" style="display:none;flex:1;min-height:0;overflow:hidden;display:none;flex-direction:column">
+        <div style="padding:6px 8px;border-bottom:1px solid var(--bdr);display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;flex-shrink:0">
+          <div>
+            <label class="lbl" style="margin-top:0">Expiry Date</label>
+            <input type="date" id="leapExp" value="2028-01-17" onchange="renderLeapScanner()" style="width:130px">
+          </div>
+          <div>
+            <label class="lbl" style="margin-top:0">Contracts</label>
+            <input type="number" id="leapQty" value="1" step="1" min="1" style="width:55px" onchange="renderLeapScanner()">
+          </div>
+          <div style="font-size:9px;color:var(--mut);line-height:1.5;max-width:220px">
+            Edit <strong style="color:var(--ylw)">Bid $</strong> to enter real market prices.
+            <strong style="color:var(--grn)">Leverage</strong> shows exposure per dollar — peak zone is ATM ±15%.
+          </div>
+        </div>
+        <div style="flex:1;overflow:auto;padding:4px 8px">
+          <div id="leapScannerWrap"><div class="empty">Adjust spot &amp; IV in sidebar to update.</div></div>
+        </div>
+      </div>
+
+      <!-- ── BUILDER TAB ── -->
+      <div id="builderContent" class="bd" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
+        <div id="addForm" class="af" style="display:none">
+          <div>
+            <label class="lbl" style="margin-top:0">Type</label>
+            <select id="fType" onchange="fAutoPrice()">
+              <option value="call">Call</option><option value="put">Put</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl" style="margin-top:0">Action</label>
+            <select id="fAction">
+              <option value="sell">Sell (income)</option>
+              <option value="buy">Buy (hedge)</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl" style="margin-top:0">Strike $</label>
+            <input type="number" id="fStrike" value="200" step="5" onchange="fAutoPrice()">
+          </div>
+          <div>
+            <label class="lbl" style="margin-top:0">Expiry</label>
+            <input type="date" id="fExpiry" value="2026-05-16" onchange="fAutoPrice()">
+          </div>
+          <div>
+            <label class="lbl" style="margin-top:0">Contracts</label>
+            <input type="number" id="fQty" value="1" step="1" min="1">
+          </div>
+          <div>
+            <label class="lbl" style="margin-top:0">Premium (auto)</label>
+            <input type="number" id="fPrem" step="0.01" placeholder="auto">
+          </div>
+          <div class="fw">
+            <button class="btn" onclick="toggleForm()">Cancel</button>
+            <button class="btn btnp" onclick="doAddLeg()">Add</button>
+          </div>
+        </div>
+        <div class="ts-wrap">
+          <div id="legsWrap"><div class="empty">Load a preset or add a leg to begin.</div></div>
+        </div>
+      </div><!-- /builderContent -->
+    </div><!-- /builderCard -->
+
+  </div><!-- /midRow -->
+
+  <div class="rz rz-h" id="rz-hm"></div>
+
+  <!-- Heatmap -->
+  <div class="card" id="hmCard">
+    <div class="hd">
+      <h3>Options P&amp;L Heatmap — Spot × Time Remaining</h3>
+      <span id="hmTip" style="font-size:9px;color:var(--mut);font-family:monospace"></span>
+    </div>
+    <div class="bd">
+      <canvas id="heatmapCanvas"></canvas>
+      <div class="hm-leg">
+        <span>■ <span style="color:var(--grn)">Max profit</span></span>
+        <span>■ <span style="color:#333">Breakeven</span></span>
+        <span>■ <span style="color:var(--red)">Max loss</span></span>
+        <span style="color:var(--mut)">· White line = breakeven boundary · Dashed = current spot · Top-right legend = $ scale</span>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+</div><!-- /app -->
+
+<script>
+// ═══════════════════════════════════════════════════════
+// DRAG RESIZE
+// ═══════════════════════════════════════════════════════
+function makeDragger(handle, opts) {
+  function start(e) {
+    e.preventDefault();
+    const isTouch = e.type==='touchstart';
+    const getPos = e => isTouch
+      ? (opts.axis==='x'?e.touches[0].clientX:e.touches[0].clientY)
+      : (opts.axis==='x'?e.clientX:e.clientY);
+    const startPos  = getPos(e);
+    const startSize = opts.getSize();
+    handle.classList.add('dragging');
+    document.body.style.cursor = opts.axis==='x'?'col-resize':'row-resize';
+    const move = e => { opts.setSize(startSize + getPos(e) - startPos); if(opts.onMove)opts.onMove(); };
+    const end  = () => {
+      handle.classList.remove('dragging');
+      document.body.style.cursor='';
+      window.removeEventListener('mousemove',move);
+      window.removeEventListener('mouseup',end);
+      window.removeEventListener('touchmove',move);
+      window.removeEventListener('touchend',end);
+      if(opts.onDone)opts.onDone();
+    };
+    window.addEventListener('mousemove',move);
+    window.addEventListener('mouseup',end);
+    window.addEventListener('touchmove',move,{passive:false});
+    window.addEventListener('touchend',end);
+  }
+  handle.addEventListener('mousedown',start);
+  handle.addEventListener('touchstart',start,{passive:false});
+}
+
+function initResizers() {
+  makeDragger(document.getElementById('rz-sb'),{
+    axis:'x',
+    getSize:()=>document.getElementById('sidebar').offsetWidth,
+    setSize:w=>{w=Math.max(170,Math.min(440,w));document.getElementById('sidebar').style.width=w+'px';},
+    onDone:()=>{renderChart();renderHeatmap();}
+  });
+  makeDragger(document.getElementById('rz-mid'),{
+    axis:'x',
+    getSize:()=>document.getElementById('builderCard').offsetWidth,
+    setSize:w=>{w=Math.max(180,Math.min(700,w));document.getElementById('builderCard').style.width=w+'px';},
+    onDone:()=>renderChart()
+  });
+  makeDragger(document.getElementById('rz-hm'),{
+    axis:'y',
+    getSize:()=>document.getElementById('hmCard').offsetHeight,
+    setSize:h=>{h=Math.max(70,Math.min(500,h));document.getElementById('hmCard').style.height=h+'px';},
+    onMove:()=>renderHeatmap(),
+    onDone:()=>renderHeatmap()
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// MATH
+// ═══════════════════════════════════════════════════════
+function erf(x){
+  const s=x<0?-1:1;x=Math.abs(x);
+  const t=1/(1+0.3275911*x);
+  return s*(1-((((1.061405429*t-1.453152027)*t+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x));
+}
+const N=x=>0.5*(1+erf(x/Math.SQRT2));
+const npdf=x=>Math.exp(-0.5*x*x)/Math.sqrt(2*Math.PI);
+
+function bsPrice(S,K,T,r,sig,type){
+  if(T<=0)return Math.max(0,type==='call'?S-K:K-S);
+  const sq=Math.sqrt(T);
+  const d1=(Math.log(S/K)+(r+0.5*sig*sig)*T)/(sig*sq);
+  const d2=d1-sig*sq;
+  return type==='call'?S*N(d1)-K*Math.exp(-r*T)*N(d2):K*Math.exp(-r*T)*N(-d2)-S*N(-d1);
+}
+
+function bsAll(S,K,T,r,sig,type){
+  if(T<1/365){
+    const intr=Math.max(0,type==='call'?S-K:K-S);
+    return{price:intr,delta:type==='call'?(S>=K?1:0):(S<=K?-1:0),gamma:0,theta:0,vega:0,d2:0};
+  }
+  const sq=Math.sqrt(T);
+  const d1=(Math.log(S/K)+(r+0.5*sig*sig)*T)/(sig*sq);
+  const d2=d1-sig*sq;
+  const nd1=npdf(d1);const eRT=Math.exp(-r*T);
+  const delta=type==='call'?N(d1):N(d1)-1;
+  const gamma=nd1/(S*sig*sq);
+  const vega=S*nd1*sq/100;
+  const theta=type==='call'
+    ?(-(S*nd1*sig)/(2*sq)-r*K*eRT*N(d2))/365
+    :(-(S*nd1*sig)/(2*sq)+r*K*eRT*N(-d2))/365;
+  const price=type==='call'?S*N(d1)-K*eRT*N(d2):K*eRT*N(-d2)-S*N(-d1);
+  return{price,delta,gamma,theta,vega,d2};
+}
+
+// ═══════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════
+const state={
+  spot:200, iv:0.80, rate:0.045,
+  simDate:new Date('2026-04-09T12:00:00'),
+  legs:[], shares:700, cash:16000, leverage:1.0, nid:1,
+  lines:{expiry:true,t0:true,t30:false,t60:false,t90:false,shares:false},
+  customDays:[],
+  chartView:'pnl',   // 'pnl' | 'smile'
+  mode:'sim',        // 'sim' | 'live'
+  liveOptions:[],    // [{K, iv, type, exp}] from Yahoo Finance
+  ivSurface:'flat',  // 'flat' | 'smile'  — IV model used for P&L + heatmap
+  smileSkew:-0.12,   // log-moneyness skew (<0 = put skew, typical for equities)
+  smileConv:0.20,    // convexity / curvature of the smile
+  liveSource:'yahoo',  // 'yahoo' | 'saxo'
+  saxoToken:'',        // Saxo access token (session memory only, never persisted)
+  saxoEnv:'sim',       // 'sim' = developer.saxo SIM gateway | 'live' = real account gateway
+  saxoClientId:'',     // OAuth app client_id from developer.saxo.com → Apps
+};
+
+// Color palette for custom day lines — cycles through these
+const CUSTOM_COLORS=[
+  '#ff7b72','#ffa657','#f2cc60','#a5d6ff',
+  '#d2a8ff','#7ee787','#79c0ff','#ffb347',
+  '#b5e3ff','#ff9cce',
+];
+
+// User-entered real market bid prices for LEAP scanner, keyed by strike
+const leapBids={};
+
+// Roll simulator state — generic for any option type + direction
+const rsState={type:'call', action:'buy', K0:160, prem0:2.20, S1:150, iv1:120, dte1:30, dte2:60};
+
+function getT(exp){
+  return Math.max(0,(new Date(exp+'T21:00:00')-state.simDate)/(1000*60*60*24*365));
+}
+// Entry price of a leg (stored or computed at current params)
+function entryPx(leg){
+  return leg.prem??bsPrice(state.spot,leg.K,getT(leg.exp),state.rate,state.iv,leg.type);
+}
+
+// ── legIV: effective ENTRY IV for a leg (used as the reference / anchor) ──
+// For legs with a stored prem: back-solves to find the IV that priced the entry.
+// This is the ENTRY IV — it stays fixed regardless of where the IV slider is.
+// Compared with scenarioIV (which always uses current state.iv), the difference
+// between legIV and scenarioIV at the same spot = the vega P&L from IV moves.
+function legIV(leg){
+  // No stored entry price: entry is implicitly "at current conditions"
+  if(leg.prem===undefined||leg.prem===null){
+    if(state.ivSurface==='smile') return smileIV(leg.K,state.spot,state.iv);
+    return state.iv;
+  }
+  const T=getT(leg.exp);
+  if(T<=0) return state.iv;
+  const target=leg.prem;
+  // Fast path: if current IV already prices the option at the stored prem,
+  // the entry and current IV are the same (no vega P&L to show yet).
+  const autoP=bsPrice(state.spot,leg.K,T,state.rate,state.iv,leg.type);
+  if(Math.abs(autoP-target)<0.005) return state.iv;
+  // Intrinsic floor — if target < intrinsic, no real IV exists; return global
+  const intr=Math.max(0,leg.type==='call'?state.spot-leg.K:leg.K-state.spot);
+  if(target<=intr) return state.iv;
+  // Binary search: find sigma where BS(sigma) = target
+  let lo=0.01,hi=10.0;
+  for(let i=0;i<50;i++){
+    const mid=(lo+hi)/2;
+    bsPrice(state.spot,leg.K,T,state.rate,mid,leg.type)<target?lo=mid:hi=mid;
+  }
+  return (lo+hi)/2;
+}
+
+// ── Capital required for a leg ──
+// Covered calls (on owned shares) need no additional capital.
+// Short puts need strike × 100 / leverage as collateral.
+// Long options need premium paid.
+// Naked calls need ~20% of notional / leverage.
+function capitalRequired(leg){
+  if(leg.action==='buy') return entryPx(leg)*leg.qty*100; // premium paid
+  if(leg.type==='put'){
+    // Short put: cash-secured collateral, reduced by leverage
+    return leg.K*100*leg.qty/state.leverage;
+  }
+  if(leg.type==='call'){
+    // Covered by owned shares?
+    const coveredContracts=Math.floor(state.shares/100);
+    const coveredQty=Math.min(leg.qty,coveredContracts);
+    const nakedQty=leg.qty-coveredQty;
+    // Covered portion: $0 additional capital. Naked: 20% of notional / leverage.
+    return nakedQty*leg.K*100*0.20/state.leverage;
+  }
+  return 0;
+}
+
+function totalCapitalRequired(){
+  return state.legs.reduce((s,l)=>s+capitalRequired(l),0);
+}
+
+// ── Probability a short option expires OTM (= prob of max profit for that leg) ──
+function probOTM(leg){
+  const T=getT(leg.exp);
+  if(T<=0||leg.action!=='sell')return null;
+  const{d2}=bsAll(state.spot,leg.K,T,state.rate,state.iv,leg.type);
+  // For a short call: expires OTM if S < K → prob = N(-d2)
+  // For a short put:  expires OTM if S > K → prob = N(d2)
+  return leg.type==='call'?N(-d2):N(d2);
+}
+
+// ── Prob all short legs expire OTM (product — assumes independence, conservative) ──
+function probMaxProfit(){
+  let p=1;
+  for(const l of state.legs){
+    const po=probOTM(l);
+    if(po!==null)p*=po;
+  }
+  return p;
+}
+
+// ── Annualised yield on capital deployed ──
+function annualisedYield(){
+  let netPrem=0,minDTE=Infinity;
+  for(const l of state.legs){
+    const sign=l.action==='sell'?1:-1;
+    netPrem+=sign*entryPx(l)*l.qty*100;
+    const dte=getT(l.exp)*365;
+    if(dte>0&&dte<minDTE)minDTE=dte;
+  }
+  const cap=totalCapitalRequired();
+  if(cap<=0||minDTE===Infinity||netPrem<=0)return null;
+  return(netPrem/cap)*(365/minDTE)*100;
+}
+
+function portGreeks(){
+  let d=0,g=0,th=0,v=0;
+  for(const l of state.legs){
+    const T=getT(l.exp);if(T<=0)continue;
+    const gr=bsAll(state.spot,l.K,T,state.rate,state.iv,l.type);
+    const s=(l.action==='buy'?1:-1)*l.qty*100;
+    d+=gr.delta*s;g+=gr.gamma*s;th+=gr.theta*s;v+=gr.vega*s;
+  }
+  return{d,g,th,v};
+}
+
+// ═══════════════════════════════════════════════════════
+// SIDEBAR TABS
+// ═══════════════════════════════════════════════════════
+function sbTab(btn){
+  document.querySelectorAll('.sb-tab').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  const tab=btn.dataset.tab;
+  document.getElementById('sbSetup').style.display  =tab==='setup'  ?'flex':'none';
+  document.getElementById('sbSummary').style.display=tab==='summary'?'flex':'none';
+  document.getElementById('sbRollsim').style.display =tab==='rollsim'?'flex':'none';
+  if(tab==='rollsim')renderRollSim();
+}
+
+// ═══════════════════════════════════════════════════════
+// BUILDER TABS
+// ═══════════════════════════════════════════════════════
+function switchBuilderTab(btn){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  const tab=btn.dataset.tab;
+  const bc=document.getElementById('builderContent');
+  const lc=document.getElementById('leapContent');
+  const alb=document.getElementById('addLegBtn');
+  if(tab==='builder'){
+    bc.style.display='flex';lc.style.display='none';alb.style.display='';
+  } else {
+    bc.style.display='none';lc.style.display='flex';alb.style.display='none';
+    renderLeapScanner();
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// LEAP STRIKE SCANNER
+// ═══════════════════════════════════════════════════════
+function updateLeapBid(K,val){
+  const v=parseFloat(val);
+  if(!isNaN(v)&&v>0)leapBids[K]=v; else delete leapBids[K];
+  // Don't re-render on every keystroke — user is typing
+}
+function commitLeapBid(K,val){
+  const v=parseFloat(val);
+  if(!isNaN(v)&&v>0)leapBids[K]=v; else delete leapBids[K];
+  renderLeapScanner();
+}
+function leapAddToLegs(K,exp,qty){
+  const T=getT(exp);
+  const prem=leapBids[K]!==undefined?leapBids[K]:bsPrice(state.spot,K,T,state.rate,state.iv,'call');
+  state.legs.push({id:state.nid++,type:'call',action:'buy',K,exp,qty,prem});
+  // Pre-fill roll sim
+  document.getElementById('rsK0').value=K;
+  document.getElementById('rsPrem0').value=prem.toFixed(1);
+  document.getElementById('rsType').value='call';
+  document.getElementById('rsAction').value='buy';
+  rsState.type='call';rsState.action='buy';rsState.K0=K;rsState.prem0=prem;
+  // Switch builder to legs view
+  document.querySelectorAll('.tab-btn').forEach(b=>{if(b.dataset.tab==='builder')switchBuilderTab(b);});
+  renderAll();
+}
+
+function renderLeapScanner(){
+  const el=document.getElementById('leapScannerWrap');
+  if(!el)return;
+  const exp=document.getElementById('leapExp').value;
+  const qty=+document.getElementById('leapQty').value||1;
+  const T=getT(exp);
+  const S=state.spot,r=state.rate,iv=state.iv;
+  if(T<=0){el.innerHTML='<div class="empty">Expiry date is in the past</div>';return;}
+
+  const lo=Math.max(5,Math.round(S*0.50/5)*5);
+  const hi=Math.round(S*1.45/5)*5;
+  const step=S>400?10:5;
+  const strikes=[];
+  for(let k=lo;k<=hi;k+=step)strikes.push(k);
+
+  // ── PASS 1: compute all metrics, find optimal ──
+  // Score = Leverage × TV% × P(ITM)
+  //
+  // Three-factor composite:
+  //   Leverage = delta×S / premium  — exposure per dollar deployed
+  //   TV%      = time value / premium — fraction of capital that is pure leverage (not dead intrinsic)
+  //   P(ITM)   = N(d2)              — probability option expires in the money
+  //
+  // Without P(ITM): OTM options always score highest because TV%=100% and
+  // leverage keeps rising as premium shrinks faster than delta.
+  // P(ITM) penalises that: a 3× leverage option with 15% chance of expiring worthless
+  // is worse than a 2× leverage option with 45% chance of success.
+  // Peak naturally falls at ATM to very slightly ITM.
+  const rows=strikes.map(K=>{
+    const isUserBid=leapBids[K]!==undefined;
+    const bid=isUserBid?leapBids[K]:bsPrice(S,K,T,r,iv,'call');
+    const intrinsic=Math.max(0,S-K);
+    const tv=Math.max(0,bid-intrinsic);
+    const tvPct=bid>0?tv/bid*100:0;
+    const{delta,vega,d2}=bsAll(S,K,T,r,iv,'call');
+    const absDelta=Math.abs(delta);
+    const lev=bid>0?(absDelta*S)/bid:0;
+    const pITM=N(d2); // probability expires ITM
+    const score=lev*(tvPct/100)*pITM;
+    return{K,bid,intrinsic,tv,tvPct,absDelta,lev,vega,pITM,score,isUserBid};
+  });
+
+  const optimalK=rows.reduce((best,row)=>row.score>best.score?row:best,rows[0]).K;
+
+  // ── PASS 2: render ──
+  let html=`<table class="leap-tbl"><thead><tr>
+    <th>Strike</th>
+    <th>Bid $ <span style="color:var(--ylw)">(edit→real price)</span></th>
+    <th>Intrinsic</th><th>Time Value</th><th>TV%</th>
+    <th>Δ Delta</th><th>Leverage</th><th>P(ITM)</th><th>Score</th><th>Breakeven</th><th>Vega/$1%IV</th><th></th>
+  </tr></thead><tbody>`;
+
+  for(const row of rows){
+    const{K,bid,intrinsic,tv,tvPct,absDelta,lev,vega,pITM,score,isUserBid}=row;
+    const be=K+bid;
+    const isOptimal=K===optimalK;
+    const isATM=Math.abs(K-S)<=S*0.04;
+    const isDeepITM=tvPct<50&&K<S;
+    const isFarOTM=K>S*1.20;
+
+    let rowBg='';
+    if(isOptimal)      rowBg='background:rgba(63,185,80,.12);outline:1px solid rgba(63,185,80,.4);';
+    else if(isATM)     rowBg='background:rgba(88,166,255,.07);';
+    else if(isDeepITM) rowBg='background:rgba(248,81,73,.04);';
+    else if(isFarOTM)  rowBg='opacity:.55;';
+
+    const levColor=lev>=1.5?'var(--grn)':lev>=1.3?'var(--ylw)':'var(--mut)';
+    const tvColor=tvPct>=80?'var(--grn)':tvPct>=60?'var(--txt)':'var(--red)';
+    const maxScore=rows.reduce((m,r)=>Math.max(m,r.score),0);
+    const scoreBarW=maxScore>0?Math.round(score/maxScore*100):0;
+
+    // Strike cell: optimal badge takes priority over ATM label
+    let strikeCell;
+    if(isOptimal){
+      strikeCell=`<td class="mono" style="color:var(--grn);font-weight:700">
+        $${K}
+        <span style="display:inline-block;background:var(--grn);color:#000;
+          font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;margin-left:3px">★ OPTIMAL</span>
+        ${isATM?'<span style="font-size:8px;color:var(--blu);margin-left:2px">ATM</span>':''}
+      </td>`;
+    } else {
+      strikeCell=`<td class="mono" style="${isATM?'color:var(--blu);font-weight:700':''}">
+        $${K}${isATM?' <span style="font-size:8px;color:var(--blu)">ATM</span>':''}
+      </td>`;
+    }
+
+    html+=`<tr style="${rowBg}">
+      ${strikeCell}
+      <td><div style="display:flex;align-items:center;gap:3px">
+        <input type="number" step="0.1" value="${bid.toFixed(1)}"
+          style="width:60px;padding:2px 4px;font-size:10px;background:var(--sur2);
+            border:1px solid ${isUserBid?'var(--ylw)':'var(--bdr)'};color:var(--txt);border-radius:3px"
+          oninput="updateLeapBid(${K},this.value)"
+          onchange="commitLeapBid(${K},this.value)">
+        <span style="font-size:8px;color:${isUserBid?'var(--ylw)':'var(--mut)'}">${isUserBid?'✎ mkt':'BS'}</span>
+      </div></td>
+      <td class="mono" style="color:${intrinsic>0?'var(--grn)':'var(--mut)'}">${intrinsic>0?'$'+intrinsic.toFixed(0):'—'}</td>
+      <td class="mono"><strong>$${tv.toFixed(1)}</strong></td>
+      <td class="mono" style="color:${tvColor}">${tvPct.toFixed(0)}%</td>
+      <td class="mono">${absDelta.toFixed(3)}</td>
+      <td class="mono" style="color:${levColor};font-weight:${lev>=1.3?'700':'400'}">${lev.toFixed(2)}×</td>
+      <td class="mono" style="color:${pITM>=0.45?'var(--grn)':pITM>=0.30?'var(--ylw)':'var(--mut)'}">${(pITM*100).toFixed(0)}%</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:4px">
+          <div style="width:40px;height:5px;background:var(--sur2);border-radius:3px;overflow:hidden">
+            <div style="width:${scoreBarW}%;height:100%;background:${isOptimal?'var(--grn)':'var(--blu)'}"></div>
+          </div>
+          <span class="mono" style="font-size:9px;color:${isOptimal?'var(--grn)':'var(--mut)'}">${score.toFixed(2)}</span>
+        </div>
+      </td>
+      <td class="mono">$${be.toFixed(0)}</td>
+      <td class="mono" style="color:var(--mut)">$${(vega*100).toFixed(1)}</td>
+      <td><button class="btn btnp" style="padding:1px 6px;font-size:9px;${isOptimal?'background:var(--grn);border-color:var(--grn)':''}"
+        onclick="leapAddToLegs(${K},'${exp}',${qty})">+ Add</button></td>
+    </tr>`;
+  }
+
+  html+=`</tbody></table>
+  <div style="font-size:9px;color:var(--mut);margin-top:7px;line-height:1.8;padding:0 2px;
+    background:rgba(63,185,80,.05);border:1px solid rgba(63,185,80,.15);border-radius:4px;padding:5px 7px">
+    <strong style="color:var(--grn)">★ OPTIMAL</strong> = highest <strong>Score = Leverage × TV% × P(ITM)</strong>.
+    <strong>Leverage</strong> rewards high delta per dollar · <strong>TV%</strong> penalises intrinsic dead-weight (deep ITM) ·
+    <strong>P(ITM)</strong> penalises far OTM options for high probability of expiring worthless.
+    Peak naturally falls at ATM or very slightly ITM — the true sweet spot.
+  </div>
+  <div style="font-size:9px;color:var(--mut);margin-top:5px;line-height:1.7;padding:0 2px">
+    <span style="color:var(--grn)">■ Leverage ≥1.5×</span> ·
+    <span style="color:var(--ylw)">■ 1.3–1.5×</span> ·
+    <span style="color:var(--blu)">■</span> ATM ·
+    <strong>TV%</strong> = % of premium that is pure leverage ·
+    <strong>Vega</strong> = gain per 1% IV move per contract
+  </div>`;
+  el.innerHTML=html;
+}
+
+// ═══════════════════════════════════════════════════════
+// ROLL SIMULATOR — generic for any option type + direction
+// ═══════════════════════════════════════════════════════
+function renderRollSim(){
+  const el=document.getElementById('rollSimResults');
+  if(!el)return;
+  const{type,action,K0,prem0,S1,iv1,dte1,dte2}=rsState;
+  if(!K0||!prem0||!S1||!dte1||!dte2){el.innerHTML='';return;}
+
+  const lbl=document.getElementById('rsP0Label');
+  if(lbl)lbl.textContent=action==='buy'?'Prem paid $':'Prem received $';
+
+  const T1=dte1/365;   // DTE remaining on OLD option
+  const T2=dte2/365;   // DTE of NEW option being rolled into
+  const iv=iv1/100;
+  const isLong=action==='buy';
+  const isCall=type==='call';
+
+  // Value of existing position at scenario price using OLD option DTE
+  const curVal=bsPrice(S1,K0,T1,state.rate,iv,type);
+
+  // P&L on existing position per share (positive = gain)
+  const pnlPerShare=isLong?(curVal-prem0):(prem0-curVal);
+  const pnlTotal=pnlPerShare*100;
+
+  // Original breakeven at expiry of old option
+  const oldBE=isCall?K0+prem0:K0-prem0;
+
+  // Strike range: from 70% to 140% of S1, rounded to step, ~15 rows
+  const step=S1>300?10:5;
+  const atm=Math.round(S1/step)*step;
+  const lo=Math.round(S1*0.70/step)*step;
+  const hi=Math.round(S1*1.40/step)*step;
+  const targets=[];
+  for(let K=lo;K<=hi;K+=step){
+    targets.push({
+      K,
+      atm:K===atm,
+      otm:isCall?(K>S1):(K<S1),  // OTM relative to spot (safer for short)
+      itm:isCall?(K<S1):(K>S1),
+    });
+  }
+
+  let tbl=`<div style="overflow-x:auto"><table class="lt" style="font-size:10px;min-width:380px;width:100%">
+    <thead>
+      <tr><th colspan="7" style="background:var(--sur2);text-align:left;font-size:9px;color:var(--mut);padding:3px 5px">
+        Close old ${type.toUpperCase()} $${K0} (worth $${curVal.toFixed(2)}) · Open new ${type.toUpperCase()} at ${dte2}d DTE · Spot $${S1} · IV ${iv1}%
+      </th></tr>
+      <tr>
+        <th>New strike</th>
+        <th>Moneyness</th>
+        <th>New prem</th>
+        <th>Net D/C</th>
+        <th>Total basis</th>
+        <th>New B/E</th>
+        <th>B/E Δ</th>
+      </tr>
+    </thead><tbody>`;
+
+  for(const t of targets){
+    // New option priced with T2 (new DTE) — different expiry from old
+    const newPrem=bsPrice(S1,t.K,T2,state.rate,iv,type);
+
+    // Net cash at roll:
+    //   Short: sell new (receive newPrem) − buy back old (pay curVal)
+    //   Long:  sell old (receive curVal) − buy new (pay newPrem)
+    const netCash=isLong?(curVal-newPrem):(newPrem-curVal);
+    const isCredit=netCash>=0;
+
+    // New total basis (net premium collected/paid across both legs)
+    //   Short: prem0 collected + netCash (positive=more collected)
+    //   Long:  prem0 paid − netCash (negative netCash means paid more)
+    const newBasis=isLong?(prem0-netCash):(prem0+netCash);
+
+    // New breakeven using NEW option's strike and NEW DTE's basis
+    // (this is the breakeven at expiry of the NEW option)
+    const newBE=isCall?t.K+Math.abs(newBasis):t.K-Math.abs(newBasis);
+
+    // B/E improvement vs original (positive = better)
+    const beImpr=isCall?(oldBE-newBE):(newBE-oldBE);
+
+    // Moneyness label
+    const dist=((t.K-S1)/S1*100).toFixed(0);
+    const monLabel=t.atm?'ATM':t.itm?`ITM ${dist}%`:`OTM +${dist}%`;
+    const monColor=t.atm?'var(--blu)':t.otm?'var(--grn)':'var(--red)';
+
+    // Row highlight: ATM = blue, OTM = subtle green (less assignment risk for short calls)
+    let rowBg='';
+    if(t.atm) rowBg='background:rgba(88,166,255,.1);';
+    else if(t.otm&&!isLong) rowBg='background:rgba(63,185,80,.05);';
+    else if(t.itm&&!isLong) rowBg='background:rgba(248,81,73,.05);';
+
+    const beColor=beImpr>0?'pos':beImpr<0?'neg':'neu';
+
+    tbl+=`<tr style="${rowBg}">
+      <td class="mono" style="${t.atm?'color:var(--blu);font-weight:700':''}">$${t.K}</td>
+      <td style="font-size:9px;color:${monColor}">${monLabel}</td>
+      <td class="mono">$${newPrem.toFixed(2)}</td>
+      <td class="mono ${isCredit?'pos':'neg'}">${isCredit?'CR +$':'DR −$'}${Math.abs(netCash).toFixed(2)}</td>
+      <td class="mono">$${Math.abs(newBasis).toFixed(2)}</td>
+      <td class="mono">$${newBE.toFixed(0)}</td>
+      <td class="mono ${beColor}">${beImpr>=0?'+':''}$${beImpr.toFixed(0)}</td>
+    </tr>`;
+  }
+  tbl+='</tbody></table></div>';
+
+  const sameExpiry=dte1===dte2;
+  const expiryNote=sameExpiry
+    ?`<span style="color:var(--ylw)">⚠ Same DTE as old — rolling same expiry. Increase "DTE of new option" to roll out in time.</span>`
+    :`New option has <strong>${dte2}d</strong> DTE vs <strong>${dte1}d</strong> remaining on old — rolling ${dte2>dte1?'out (more time)':'in (less time)'}.`;
+
+  el.innerHTML=`
+  <div class="rs-row">
+    <div class="rs-cell">
+      <div class="rs-label">Old option value</div>
+      <div class="rs-val neu">$${curVal.toFixed(2)}<span style="font-size:9px;color:var(--mut)">/sh</span></div>
+    </div>
+    <div class="rs-cell">
+      <div class="rs-label">Unrealised P&amp;L ×${isLong?'':'-'}100</div>
+      <div class="rs-val ${pnlTotal>=0?'pos':'neg'}">${pnlTotal>=0?'+':''}$${Math.round(pnlTotal).toLocaleString()}</div>
+    </div>
+  </div>
+  <div style="font-size:9px;color:var(--mut);margin-top:5px;line-height:1.6;padding:4px 0">
+    ${expiryNote}<br>
+    <span style="color:var(--grn)">■ OTM</span> rows = lower assignment risk for short calls ·
+    <span style="color:var(--red)">■ ITM</span> = higher risk ·
+    <strong>B/E Δ</strong> = vs original $${oldBE.toFixed(0)} breakeven
+  </div>
+  ${tbl}
+  <div style="font-size:9px;color:var(--mut);margin-top:5px;line-height:1.5">
+    <strong>Total basis</strong> = net premium collected/paid across entire roll history ·
+    <strong>CR</strong> = cash received · <strong>DR</strong> = cash paid
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════
+// CUSTOM DAY LINES
+// ═══════════════════════════════════════════════════════
+function addCustomDay(d){
+  d=Math.round(d);
+  if(!d||d<1||d>730)return;
+  if(state.customDays.includes(d))return; // no duplicates
+  state.customDays.push(d);
+  state.customDays.sort((a,b)=>a-b);
+  renderCustomDayPills();
+  renderChart();
+}
+
+function removeCustomDay(d){
+  state.customDays=state.customDays.filter(x=>x!==d);
+  renderCustomDayPills();
+  renderChart();
+}
+
+function clearCustomDays(){
+  state.customDays=[];
+  renderCustomDayPills();
+  renderChart();
+}
+
+function renderCustomDayPills(){
+  const el=document.getElementById('customDayPills');
+  if(!el)return;
+  if(state.customDays.length===0){el.innerHTML='';return;}
+  el.innerHTML=state.customDays.map((d,i)=>{
+    const col=CUSTOM_COLORS[i%CUSTOM_COLORS.length];
+    return `<span style="display:inline-flex;align-items:center;gap:3px;
+      background:rgba(255,255,255,.06);border:1px solid ${col};
+      border-radius:8px;padding:1px 6px;font-size:9px;color:${col};font-family:monospace">
+      +${d}d
+      <span onclick="removeCustomDay(${d})" style="cursor:pointer;color:${col};
+        opacity:.7;font-size:10px;line-height:1;padding:0 1px">×</span>
+    </span>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+// MODE: SIMULATION vs LIVE
+// ═══════════════════════════════════════════════════════
+function setMode(m){
+  state.mode=m;
+  const isLive=m==='live';
+  document.getElementById('modeSim').classList.toggle('on',!isLive);
+  document.getElementById('modeLive').classList.toggle('on',isLive);
+  document.getElementById('modeBadge').textContent=isLive?'Live Data':'Simulation';
+  document.getElementById('modeBadge').style.background=isLive?'var(--grn)':'var(--blu)';
+  document.getElementById('liveSrcRow').style.display=isLive?'flex':'none';
+  document.getElementById('liveBtn').style.display=isLive?'':'none';
+  document.getElementById('liveStatus').style.display=isLive?'':'none';
+  updateSaxoUI();
+  if(isLive) fetchLiveData();
+}
+
+function setLiveSource(src){
+  state.liveSource=src;
+  document.getElementById('srcYahoo').classList.toggle('on',src==='yahoo');
+  document.getElementById('srcSaxo').classList.toggle('on',src==='saxo');
+  updateSaxoUI();
+  // Only auto-fetch if switching to Yahoo, or if Saxo already has a token
+  if(src==='yahoo'||(src==='saxo'&&state.saxoToken)) fetchLiveData();
+}
+
+function updateSaxoUI(){
+  const showSaxo=state.mode==='live'&&state.liveSource==='saxo';
+  document.getElementById('saxoControls').style.display=showSaxo?'flex':'none';
+  if(showSaxo){
+    const isSim=state.saxoEnv==='sim';
+    document.getElementById('saxoSimUI').style.display=isSim?'flex':'none';
+    document.getElementById('saxoLiveUI').style.display=isSim?'none':'flex';
+    // Sync clientId field to state (in case user switched env)
+    if(isSim){
+      const el=document.getElementById('saxoClientIdSim');
+      if(el&&state.saxoClientId) el.value=state.saxoClientId;
+    } else {
+      const el=document.getElementById('saxoClientId');
+      if(el&&state.saxoClientId) el.value=state.saxoClientId;
+    }
+  }
+}
+
+function setSaxoEnv(env){
+  state.saxoEnv=env;
+  document.getElementById('saxoEnvSim').classList.toggle('on',env==='sim');
+  document.getElementById('saxoEnvLive').classList.toggle('on',env==='live');
+  updateSaxoUI();
+}
+
+// ── OAuth 2.0 PKCE flow — full-page redirect (no popup) ──
+// Avoids all popup-blocking and cross-origin issues.
+// Flow:
+//   1. Save tool state + clientId + code_verifier to sessionStorage
+//   2. Redirect THIS page to Saxo login
+//   3. User authenticates → Saxo redirects back here with ?code=...
+//   4. On load, detect ?code= in URL, exchange for token, restore state
+// sessionStorage is cleared after token exchange. Token stays in memory only.
+
+
+// ── Saxo OAuth — PKCE flow via popup ──
+// Confirmed endpoints (developer.saxo/openapi/learn):
+//   SIM:  https://sim.logonvalidation.net/authorize|/token
+//   Live: https://live.logonvalidation.net/authorize|/token
+// Grant type: PKCE (response_type=code + code_challenge).
+// Popup flow:
+//   1. Generate code_verifier + code_challenge
+//   2. Open popup → Saxo login page
+//   3. User authenticates → Saxo redirects popup to localhost?code=...
+//   4. Popup is now same-origin → we read ?code= from popup.location
+//   5. POST code + verifier to /token → get access_token
+//   6. Token stored in memory only, never written to disk.
+
+function saxoAuthBase(){
+  return state.saxoEnv==='sim'
+    ? 'https://sim.logonvalidation.net'
+    : 'https://live.logonvalidation.net';
+}
+
+// PKCE helpers
+function b64url(buf){
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+function genVerifier(){
+  const a=new Uint8Array(32);crypto.getRandomValues(a);return b64url(a.buffer);
+}
+async function genChallenge(v){
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v));
+  return b64url(buf);
+}
+
+let _pkceVerifier='';
+
+function showRedirectUri(){
+  const uri=window.location.href.split('#')[0].split('?')[0];
+  prompt('Copy this EXACT redirect URI into your Saxo app settings:',uri);
+}
+
+async function saxoDebugUrl(){
+  const clientId=state.saxoClientId.trim();
+  const redirectUri=window.location.href.split('#')[0].split('?')[0];
+  if(!clientId){alert('Paste your app key first.');return;}
+  // Generate a real challenge so the URL is valid
+  const v=genVerifier();
+  const c=await genChallenge(v);
+  const url=
+    saxoAuthBase()+'/authorize'+
+    '?response_type=code'+
+    '&client_id='+encodeURIComponent(clientId)+
+    '&redirect_uri='+encodeURIComponent(redirectUri)+
+    '&code_challenge='+c+
+    '&code_challenge_method=S256'+
+    '&state=debug';
+  prompt('Full auth URL (open in new tab to test):',url);
+}
+
+function saxoAuthStatus(){
+  // Returns whichever status span is currently visible (SIM or Live)
+  const isSim=state.saxoEnv==='sim';
+  return document.getElementById(isSim?'saxoAuthStatus':'saxoAuthStatusLive');
+}
+
+async function saxoOAuthLogin(){
+  // Read client_id from whichever input is active
+  const isSim=state.saxoEnv==='sim';
+  const inputId=isSim?'saxoClientIdSim':'saxoClientId';
+  const inputEl=document.getElementById(inputId);
+  if(inputEl) state.saxoClientId=inputEl.value;
+  const clientId=state.saxoClientId.trim();
+  const redirectUri=window.location.href.split('#')[0].split('?')[0];
+  const authStatus=saxoAuthStatus();
+
+  if(!clientId){
+    alert(
+      'Enter your app key (client_id) first.\n\n'+
+      'Required settings in your Saxo live app:\n'+
+      '  Grant type: PKCE\n'+
+      '  Redirect URI: '+redirectUri
+    );
+    return;
+  }
+
+  authStatus.textContent='Opening login…';authStatus.style.color='var(--mut)';
+
+  _pkceVerifier=genVerifier();
+  const challenge=await genChallenge(_pkceVerifier);
+  const stateParam='mstr_'+Math.random().toString(36).slice(2,8);
+
+  const authUrl=
+    saxoAuthBase()+'/authorize'+
+    '?response_type=code'+
+    '&client_id='+encodeURIComponent(clientId)+
+    '&redirect_uri='+encodeURIComponent(redirectUri)+
+    '&code_challenge='+challenge+
+    '&code_challenge_method=S256'+
+    '&state='+stateParam;
+
+  const popup=window.open(authUrl,'saxo_login','width=540,height=660,left=200,top=80');
+  if(!popup){
+    authStatus.textContent='Popup blocked — allow popups for localhost then try again';
+    authStatus.style.color='var(--red)';
+    _pkceVerifier='';
+    return;
+  }
+  authStatus.textContent='Waiting for Saxo login…';
+
+  const poll=setInterval(async()=>{
+    try{
+      // Throws while popup is on Saxo domain (cross-origin) — expected, keep polling
+      const search=popup.location.search;
+      if(search&&search.includes('code=')){
+        clearInterval(poll);
+        const params=new URLSearchParams(search.slice(1));
+        const code=params.get('code');
+        popup.close();
+
+        authStatus.textContent='Exchanging code for token…';
+
+        const verifier=_pkceVerifier;
+        _pkceVerifier=''; // clear immediately — single use
+
+        try{
+          const resp=await fetch(saxoAuthBase()+'/token',{
+            method:'POST',
+            headers:{'Content-Type':'application/x-www-form-urlencoded'},
+            body:new URLSearchParams({
+              grant_type:'authorization_code',
+              code,
+              redirect_uri:redirectUri,
+              client_id:clientId,
+              code_verifier:verifier,
+            }),
+          });
+          const data=await resp.json();
+          if(data.access_token){
+            state.saxoToken=data.access_token;
+            const exp=data.expires_in?Math.round(data.expires_in/60)+'min':'?';
+            authStatus.textContent=`✓ Authenticated (${exp} remaining)`;
+            authStatus.style.color='var(--grn)';
+            fetchLiveData();
+          } else {
+            authStatus.textContent='Token error: '+(data.error_description||data.error||'unknown');
+            authStatus.style.color='var(--red)';
+            console.error('Saxo token response:',data);
+          }
+        }catch(e){
+          authStatus.textContent='Token exchange failed — see console';
+          authStatus.style.color='var(--red)';
+          console.error('Saxo token exchange error:',e);
+        }
+      }
+    }catch(e){/* cross-origin — popup still on Saxo, keep polling */}
+
+    if(popup.closed&&_pkceVerifier){
+      // Popup closed before we got a code — user cancelled
+      clearInterval(poll);
+      _pkceVerifier='';
+      authStatus.textContent='Login cancelled';
+      authStatus.style.color='var(--ylw)';
+    }
+  },400);
+}
+
+function handleSaxoCallback(){} // unused in popup flow — kept for safety
+
+async function fetchLiveData(){
+  const btn=document.getElementById('liveBtn');
+  const status=document.getElementById('liveStatus');
+  if(!btn)return;
+  btn.textContent='⟳ Loading...';btn.disabled=true;
+  status.textContent='Fetching...';status.style.color='var(--mut)';
+  if(state.liveSource==='saxo'){
+    await fetchSaxoData(btn,status);
+    return;
+  }
+  try{
+    // ── Spot price via Yahoo Finance ──
+    const r=await fetch('https://query1.finance.yahoo.com/v8/finance/chart/MSTR?interval=1m&range=1d',{cache:'no-cache'});
+    const d=await r.json();
+    const spot=d.chart.result[0].meta.regularMarketPrice;
+    syncSpot(Math.round(spot*100)/100);
+
+    // ── Options chain ──
+    const r2=await fetch('https://query1.finance.yahoo.com/v7/finance/options/MSTR',{cache:'no-cache'});
+    const d2=await r2.json();
+    const chain=d2.optionChain.result[0];
+    const exps=chain.expirationDates; // unix timestamps
+
+    // Collect all calls + puts from the nearest expiry
+    const opts=chain.options[0];
+    const toDate=ts=>new Date(ts*1000).toISOString().slice(0,10);
+    state.liveOptions=[
+      ...opts.calls.filter(o=>o.impliedVolatility>0).map(o=>({
+        K:o.strike, iv:o.impliedVolatility, type:'call', exp:toDate(o.expiration),
+        bid:o.bid, ask:o.ask,
+      })),
+      ...opts.puts.filter(o=>o.impliedVolatility>0).map(o=>({
+        K:o.strike, iv:o.impliedVolatility, type:'put', exp:toDate(o.expiration),
+        bid:o.bid, ask:o.ask,
+      })),
+    ];
+
+    // Set global IV to ATM call IV
+    const atmCall=opts.calls.reduce((b,o)=>Math.abs(o.strike-spot)<Math.abs(b.strike-spot)?o:b,opts.calls[0]);
+    if(atmCall?.impliedVolatility>0) syncIV(Math.round(atmCall.impliedVolatility*100));
+
+    // ── Fit smile parameters to live market data ──
+    // Only use strikes with reasonable IV (0.10–5.0) and non-zero bids
+    const fitPts=state.liveOptions.filter(o=>o.iv>0.10&&o.iv<5.0&&o.bid>0);
+    if(fitPts.length>=3){
+      const baseIV=state.iv;
+      // Grid search over skew × conv (fast, 2-param, no derivatives needed)
+      let bestSkew=-0.12,bestConv=0.20,bestErr=Infinity;
+      for(let sk=-0.50;sk<=0.15;sk+=0.025){
+        for(let cv=0.0;cv<=1.0;cv+=0.05){
+          let err=0;
+          for(const o of fitPts){
+            const model=smileIV(o.K,spot,baseIV,sk,cv);
+            err+=(model-o.iv)**2;
+          }
+          if(err<bestErr){bestErr=err;bestSkew=sk;bestConv=cv;}
+        }
+      }
+      state.smileSkew=Math.round(bestSkew*1000)/1000;
+      state.smileConv=Math.round(bestConv*1000)/1000;
+      // Update UI sliders
+      const skEl=document.getElementById('smileSkewIn');
+      const cvEl=document.getElementById('smileConvIn');
+      if(skEl){skEl.value=state.smileSkew;document.getElementById('smileSkewVal').textContent=state.smileSkew.toFixed(2);}
+      if(cvEl){cvEl.value=state.smileConv;document.getElementById('smileConvVal').textContent=state.smileConv.toFixed(2);}
+      status.textContent=`$${spot.toFixed(2)} · ${state.liveOptions.length} options · smile fitted (skew=${state.smileSkew}, conv=${state.smileConv})`;
+    } else {
+      status.textContent=`$${spot.toFixed(2)} · ${state.liveOptions.length} options loaded`;
+    }
+    status.style.color='var(--grn)';
+    btn.textContent='⟳ Refresh';
+    renderAll();
+  }catch(e){
+    status.textContent='Failed — check network / CORS';
+    status.style.color='var(--red)';
+    console.error('Live data error:',e);
+  }
+  btn.disabled=false;
+}
+
+// ═══════════════════════════════════════════════════════
+// SAXO BANK LIVE DATA
+// Read-only market data via Saxo OpenAPI (requires access token).
+// Token is held only in state.saxoToken (memory) — never written to disk.
+//
+// How to get a token:
+//   1. Go to developer.saxo/openapi/explore (free account)
+//   2. Authenticate → copy the 24h Bearer token shown in the explorer
+//   3. Paste into the "Saxo access token" field in this tool
+//
+// Alternatively register an app at developer.saxo.com with your brokerage
+// account for persistent OAuth — this tool only needs "read" scopes.
+// ═══════════════════════════════════════════════════════
+async function fetchSaxoData(btn,status){
+  const token=state.saxoToken.trim();
+  if(!token){
+    if(state.saxoEnv==='live'){
+      status.textContent='Click 🔐 Login first to authenticate with your Saxo account';
+    } else {
+      status.textContent='Paste your SIM token first (from developer.saxo OpenAPI Explorer)';
+    }
+    status.style.color='var(--ylw)';
+    btn.textContent='⟳ Fetch MSTR';btn.disabled=false;
+    return;
+  }
+
+  // SIM environment uses the SIM gateway — tokens from developer.saxo only work here.
+  // Live environment uses the production gateway — requires OAuth with personal account.
+  const BASE=state.saxoEnv==='sim'
+    ? 'https://gateway.saxobank.com/sim/openapi'
+    : 'https://gateway.saxobank.com/openapi';
+  const H={'Authorization':'Bearer '+token};
+
+  try{
+    // ── Step 1: find MSTR instrument Uic ──
+    // No ExchangeId filter — Saxo uses internal IDs, not standard MIC codes
+    const r1=await fetch(
+      `${BASE}/ref/v1/instruments?Keywords=MSTR&AssetTypes=Stock`,
+      {headers:H}
+    );
+    if(r1.status===401){
+      const envLabel=state.saxoEnv==='sim'?'SIM':'Live';
+      status.textContent=`Token rejected (${envLabel} gateway). ${state.saxoEnv==='sim'?'Copy a fresh token from developer.saxo → token page':'Use 🔐 Login to re-authenticate'}`;
+      status.style.color='var(--red)';btn.textContent='⟳ Fetch MSTR';btn.disabled=false;
+      if(state.saxoEnv==='live') state.saxoToken='';
+      return;
+    }
+    const d1=await r1.json();
+    console.log('Saxo MSTR search results:',d1.Data); // debug — visible in browser console
+    // Match on Symbol or Description containing MSTR (Saxo may suffix exchange)
+    const mstr=d1.Data?.find(i=>
+      i.Symbol==='MSTR'||
+      i.Symbol?.startsWith('MSTR')||
+      i.Description?.includes('MicroStrategy')
+    );
+    if(!mstr){
+      // Show what we actually got so user can report it
+      const found=(d1.Data||[]).map(i=>i.Symbol).join(', ')||'nothing';
+      status.textContent=`MSTR not found — got: ${found} (check console for details)`;
+      status.style.color='var(--ylw)';btn.textContent='⟳ Fetch MSTR';btn.disabled=false;
+      return;
+    }
+    const uic=mstr.Identifier;
+
+    // ── Step 2: get MSTR spot price ──
+    const r2=await fetch(
+      `${BASE}/trade/v1/infoprices?Uic=${uic}&AssetType=Stock&FieldGroups=PriceInfo,Quote`,
+      {headers:H}
+    );
+    const d2=await r2.json();
+    const mid=d2.Quote?.Mid||d2.Quote?.Ask||d2.PriceInfo?.LastTraded;
+    if(mid) syncSpot(Math.round(mid*100)/100);
+    const spot=state.spot;
+
+    // ── Step 3: get MSTR options list ──
+    const r3=await fetch(
+      `${BASE}/ref/v1/instruments?UnderlyingUic=${uic}&AssetTypes=StockOption&$top=200`,
+      {headers:H}
+    );
+    const d3=await r3.json();
+    console.log('Saxo options query response:',d3);
+    let optInstruments=d3.Data||[];
+
+    // Fallback: search by keyword if UnderlyingUic returns nothing
+    if(optInstruments.length===0){
+      const r3b=await fetch(
+        `${BASE}/ref/v1/instruments?Keywords=MSTR&AssetTypes=StockOption&$top=200`,
+        {headers:H}
+      );
+      const d3b=await r3b.json();
+      console.log('Saxo options keyword fallback:',d3b);
+      optInstruments=d3b.Data||[];
+    }
+
+    if(optInstruments.length===0){
+      // SIM environment often lacks options data — spot is still useful
+      status.textContent=`Saxo: $${spot.toFixed(2)} · Options not available in SIM (spot only) — switch to Live for OPRA data`;
+      status.style.color='var(--ylw)';btn.textContent='⟳ Refresh';btn.disabled=false;
+      renderAll();return;
+    }
+
+    // ── Step 4: get prices for all option instruments ──
+    // Batch in groups of 50 (Saxo limit)
+    const uics=optInstruments.map(o=>o.Identifier);
+    const priceData=[];
+    for(let i=0;i<uics.length;i+=50){
+      const batch=uics.slice(i,i+50).join(',');
+      const rp=await fetch(
+        `${BASE}/trade/v1/infoprices/list?Uics=${batch}&AssetType=StockOption&FieldGroups=PriceInfo,DisplayAndFormat,Greeks`,
+        {headers:H}
+      );
+      const dp=await rp.json();
+      if(dp.Data) priceData.push(...dp.Data);
+    }
+
+    // ── Step 5: map to liveOptions format ──
+    state.liveOptions=[];
+    for(const p of priceData){
+      const inst=optInstruments.find(o=>o.Identifier===p.Uic);
+      if(!inst) continue;
+      const iv=p.Greeks?.ImpliedVolatility;
+      if(!iv||iv<=0) continue;
+      const mid=(p.Quote?.Bid+p.Quote?.Ask)/2;
+      const K=inst.StrikePrice||p.DisplayAndFormat?.StrikePrice;
+      const type=inst.PutCall==='Call'?'call':'put';
+      const exp=inst.ExpiryDate?.slice(0,10)||'';
+      state.liveOptions.push({K,iv,type,exp,bid:p.Quote?.Bid||0,ask:p.Quote?.Ask||0,mid});
+    }
+
+    // ── Set ATM IV ──
+    const atmOpt=state.liveOptions
+      .filter(o=>o.type==='call'&&o.iv>0.05&&o.iv<5)
+      .reduce((b,o)=>Math.abs(o.K-spot)<Math.abs(b.K-spot)?o:b,{K:Infinity,iv:state.iv});
+    if(atmOpt.iv!==state.iv) syncIV(Math.round(atmOpt.iv*100));
+
+    // ── Fit smile ──
+    const fitPts=state.liveOptions.filter(o=>o.iv>0.05&&o.iv<5&&o.bid>0);
+    if(fitPts.length>=3){
+      const baseIV=state.iv;
+      let bestSkew=-0.12,bestConv=0.20,bestErr=Infinity;
+      for(let sk=-0.50;sk<=0.15;sk+=0.025){
+        for(let cv=0.0;cv<=1.0;cv+=0.05){
+          let err=0;
+          for(const o of fitPts){err+=(smileIV(o.K,spot,baseIV,sk,cv)-o.iv)**2;}
+          if(err<bestErr){bestErr=err;bestSkew=sk;bestConv=cv;}
+        }
+      }
+      state.smileSkew=Math.round(bestSkew*1000)/1000;
+      state.smileConv=Math.round(bestConv*1000)/1000;
+      const skEl=document.getElementById('smileSkewIn');
+      const cvEl=document.getElementById('smileConvIn');
+      if(skEl){skEl.value=state.smileSkew;document.getElementById('smileSkewVal').textContent=state.smileSkew.toFixed(2);}
+      if(cvEl){cvEl.value=state.smileConv;document.getElementById('smileConvVal').textContent=state.smileConv.toFixed(2);}
+    }
+
+    status.textContent=`Saxo: $${spot.toFixed(2)} · ${state.liveOptions.length} options · smile fitted`;
+    status.style.color='var(--grn)';
+    btn.textContent='⟳ Refresh';
+    renderAll();
+  }catch(e){
+    status.textContent='Saxo fetch failed — check token & CORS (serve via localhost)';
+    status.style.color='var(--red)';
+    console.error('Saxo error:',e);
+  }
+  btn.disabled=false;
+}
+
+// ═══════════════════════════════════════════════════════
+// CHART VIEW: P&L | VOL SMILE
+// ═══════════════════════════════════════════════════════
+function setChartView(v){
+  state.chartView=v;
+  const isPnl=v==='pnl';
+  // View toggle button styles
+  document.getElementById('cvPnl').style.background   =isPnl?'var(--blu)':'var(--sur2)';
+  document.getElementById('cvPnl').style.color        =isPnl?'#000':'var(--mut)';
+  document.getElementById('cvPnl').style.fontWeight   =isPnl?'700':'400';
+  document.getElementById('cvSmile').style.background =isPnl?'var(--sur2)':'var(--pur)';
+  document.getElementById('cvSmile').style.color      =isPnl?'var(--mut)':'#000';
+  document.getElementById('cvSmile').style.fontWeight =isPnl?'400':'700';
+  // Show/hide P&L-only controls
+  ['pnlControls','customDayControls','customDayPills','spotRangeRow']
+    .forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=isPnl?'':'none';});
+  // Show/hide smile info bar
+  const infoBar=document.getElementById('smileChartInfo');
+  if(infoBar){
+    infoBar.style.display=isPnl?'none':'flex';
+    document.getElementById('smileInfoSkew').textContent=state.smileSkew.toFixed(2);
+    document.getElementById('smileInfoConv').textContent=state.smileConv.toFixed(2);
+    const fitBadge=document.getElementById('smileFitBadge');
+    if(fitBadge) fitBadge.style.display=state.mode==='live'?'':'none';
+  }
+  document.getElementById('chartTitle').textContent=
+    isPnl?'Options P&L vs MSTR Spot Price':'Implied Volatility vs Strike (Vol Smile)';
+  if(chart){chart.destroy();chart=null;}
+  renderChart();
+}
+
+function setIVSurface(v){
+  state.ivSurface=v;
+  const isSmile=v==='smile';
+  document.getElementById('ivsFlatBtn').style.background  =isSmile?'var(--sur2)':'var(--blu)';
+  document.getElementById('ivsFlatBtn').style.color       =isSmile?'var(--mut)':'#000';
+  document.getElementById('ivsFlatBtn').style.fontWeight  =isSmile?'400':'700';
+  document.getElementById('ivsSmileBtn').style.background =isSmile?'var(--pur)':'var(--sur2)';
+  document.getElementById('ivsSmileBtn').style.color      =isSmile?'#000':'var(--mut)';
+  document.getElementById('ivsSmileBtn').style.fontWeight =isSmile?'700':'400';
+  document.getElementById('smileParamsUI').style.display  =isSmile?'':'none';
+  renderAll();
+}
+
+// ── Vol smile model: log-moneyness parameterisation ──
+// smileIV(K, S, baseIV) gives the IV surface value for strike K when spot is S.
+// Parameters default to state values if not passed (live-fitting updates state).
+// Convention: skew<0 → put skew (left wing up, typical equities/MSTR)
+//             conv>0 → curvature (both wings raised, the classic "smile")
+function smileIV(K,S,baseIV,skew,conv){
+  if(skew===undefined)skew=state.smileSkew;
+  if(conv===undefined)conv=state.smileConv;
+  const x=Math.log(K/S);
+  return baseIV*Math.exp(skew*x+conv*x*x);
+}
+
+// ── scenarioIV: IV to price a leg at a HYPOTHETICAL scenario spot S ──
+// Always uses the CURRENT state.iv (the "what-if" scenario IV), not the entry IV.
+// This means:
+//   • Sliding the IV slider changes cp but not refPx → vega P&L appears ✓
+//   • Switching Flat↔Smile changes the shape of the P&L curve ✓
+// The entry-price reference (refPx) is anchored via legIV/entryPx separately.
+function scenarioIV(l,S){
+  if(state.ivSurface==='smile') return smileIV(l.K,S,state.iv);
+  return state.iv;
+}
+
+function renderSmileChart(){
+  const S=state.spot,iv=state.iv;
+  const step=S>300?10:5;
+  const lo=Math.round(S*0.50/step)*step;
+  const hi=Math.round(S*1.55/step)*step;
+  const strikes=[];
+  for(let k=lo;k<=hi;k+=step)strikes.push(k);
+
+  const datasets=[];
+
+  // 1. Parameterised smile (model) — uses state.smileSkew + state.smileConv
+  const usedForPnl=state.ivSurface==='smile';
+  datasets.push({
+    label:`Vol smile model (skew=${state.smileSkew.toFixed(2)}, conv=${state.smileConv.toFixed(2)})${usedForPnl?' ← used for P&L':''}`,
+    data:strikes.map(K=>smileIV(K,S,iv)*100),
+    borderColor:'#58a6ff',backgroundColor:'rgba(88,166,255,0.08)',
+    borderWidth:usedForPnl?2.5:1.5,pointRadius:0,tension:0.4,fill:true,
+  });
+
+  // 2. Flat IV line (current global setting)
+  datasets.push({
+    label:`Flat IV ${(iv*100).toFixed(0)}%${!usedForPnl?' ← used for P&L':''}`,
+    data:strikes.map(()=>iv*100),
+    borderColor:'#8b949e',backgroundColor:'transparent',
+    borderWidth:usedForPnl?1:2,borderDash:[5,4],pointRadius:0,tension:0,
+  });
+
+  // 3. Back-solved IVs from user-entered leg prices
+  const legPoints=state.legs
+    .filter(l=>l.prem!==undefined&&l.prem!==null)
+    .map(l=>({K:l.K,iv:legIV(l)*100,type:l.type,action:l.action}));
+  if(legPoints.length){
+    datasets.push({
+      label:'Your legs (IV back-solved from entry price)',
+      data:strikes.map(K=>{
+        const pt=legPoints.find(p=>p.K===K);
+        return pt?pt.iv:null;
+      }),
+      borderColor:'#e3b341',backgroundColor:'#e3b341',
+      borderWidth:0,pointRadius:7,pointStyle:'circle',showLine:false,spanGaps:false,
+    });
+  }
+
+  // 4. Live market IV points from Yahoo Finance
+  const callPoints=state.liveOptions.filter(o=>o.type==='call');
+  const putPoints =state.liveOptions.filter(o=>o.type==='put');
+  if(callPoints.length){
+    datasets.push({
+      label:'Live market IV — Calls',
+      data:strikes.map(K=>{
+        const o=callPoints.find(p=>Math.abs(p.K-K)<step*0.6);
+        return o?o.iv*100:null;
+      }),
+      borderColor:'#3fb950',backgroundColor:'#3fb950',
+      borderWidth:0,pointRadius:4,pointStyle:'triangle',showLine:false,spanGaps:false,
+    });
+  }
+  if(putPoints.length){
+    datasets.push({
+      label:'Live market IV — Puts',
+      data:strikes.map(K=>{
+        const o=putPoints.find(p=>Math.abs(p.K-K)<step*0.6);
+        return o?o.iv*100:null;
+      }),
+      borderColor:'#f85149',backgroundColor:'#f85149',
+      borderWidth:0,pointRadius:4,pointStyle:'rectRot',showLine:false,spanGaps:false,
+    });
+  }
+
+  const ctx=document.getElementById('pnlChart').getContext('2d');
+  chart=new Chart(ctx,{
+    type:'line',data:{labels:strikes,datasets},
+    options:{
+      responsive:true,maintainAspectRatio:false,animation:{duration:80},
+      interaction:{mode:'index',intersect:false},
+      plugins:{
+        legend:{labels:{color:'#8b949e',font:{size:9},usePointStyle:true,boxWidth:8}},
+        tooltip:{
+          backgroundColor:'#161b22',borderColor:'#30363d',borderWidth:1,
+          titleColor:'#c9d1d9',bodyColor:'#8b949e',
+          callbacks:{
+            title:i=>`Strike: $${i[0].label}`,
+            label:i=>i.raw!=null?`${i.dataset.label}: ${Number(i.raw).toFixed(1)}%`:null,
+          }
+        }
+      },
+      scales:{
+        x:{
+          title:{display:true,text:'Strike Price (USD)',color:'#8b949e',font:{size:10},padding:{top:4}},
+          ticks:{color:'#8b949e',font:{size:9},maxTicksLimit:12,
+            callback:function(v){return '$'+this.getLabelForValue(v);}},
+          grid:{color:'#21262d'},
+        },
+        y:{
+          title:{display:true,text:'Implied Volatility (%)',color:'#8b949e',font:{size:10},padding:{bottom:4}},
+          ticks:{color:'#8b949e',font:{size:9},callback:v=>v.toFixed(0)+'%'},
+          grid:{color:'#21262d'},
+          min:Math.max(0,Math.round(iv*60)),
+        }
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// CHART (options P&L only)
+// ═══════════════════════════════════════════════════════
+let chart=null;
+
+function chartSpots(){
+  const lo=+document.getElementById('rMin').value;
+  const hi=+document.getElementById('rMax').value;
+  const a=[];for(let i=0;i<=120;i++)a.push(Math.round(lo+(hi-lo)*i/120));
+  return a;
+}
+
+function buildDatasets(sp){
+  const cfgs=[
+    {k:'expiry',label:'At Expiry',color:'#3fb950',dash:[],w:2.5},
+    {k:'t0',   label:'Today',    color:'#58a6ff',dash:[],w:1.5},
+    {k:'t30',  label:'+30d',     color:'#e3b341',dash:[4,3],w:1.5},
+    {k:'t60',  label:'+60d',     color:'#f0883e',dash:[4,3],w:1.5},
+    {k:'t90',  label:'+90d',     color:'#bc8cff',dash:[4,3],w:1.5},
+  ];
+  const ds=cfgs.filter(c=>state.lines[c.k]).map(c=>({
+    label:c.label,
+    data:sp.map(S=>{
+      let p=0;
+      for(const l of state.legs){
+        const sign=l.action==='buy'?1:-1;
+        const Tnow=getT(l.exp);
+        const ep=entryPx(l); // always = leg.prem (fixed at creation), no state.spot dep.
+        if(c.k==='expiry'){
+          // At expiry: intrinsic payoff minus fixed entry price. IV-independent.
+          const intr=Math.max(0,l.type==='call'?S-l.K:l.K-S);
+          p+=sign*(intr-ep)*l.qty*100;
+        } else {
+          // Time-based: current BS value at scenario spot S minus fixed entry price.
+          // refPx = ep (fixed) ensures the chart is immune to state.spot sliding past strike.
+          // scenarioIV = current state.iv (± smile at S) so IV slider moves the chart.
+          const ivFut=scenarioIV(l,S);
+          const elap=c.k==='t0'?0:parseInt(c.k.slice(1));
+          const Tfut=Math.max(0,Tnow-elap/365);
+          const cp=bsPrice(S,l.K,Tfut,state.rate,ivFut,l.type);
+          p+=sign*(cp-ep)*l.qty*100;
+        }
+      }
+      return p;
+    }),
+    borderColor:c.color,backgroundColor:'transparent',
+    borderWidth:c.w,borderDash:c.dash,pointRadius:0,tension:0.1,
+  }));
+
+  // vs Shares: equivalent-capital shares P&L (for buy legs / LEAPs)
+  if(state.lines.shares&&state.legs.length){
+    let totalCost=0;
+    for(const l of state.legs){
+      if(l.action==='buy') totalCost+=entryPx(l)*l.qty*100;
+    }
+    if(totalCost>0){
+      const equivShares=totalCost/state.spot;
+      ds.push({
+        label:`vs Shares (${equivShares.toFixed(1)} equiv. @ $${state.spot})`,
+        data:sp.map(S=>equivShares*(S-state.spot)),
+        borderColor:'#f0883e',backgroundColor:'transparent',
+        borderWidth:1.5,borderDash:[6,3],pointRadius:0,tension:0,
+      });
+    }
+  }
+
+  // Custom day lines
+  state.customDays.forEach((days,i)=>{
+    const col=CUSTOM_COLORS[i%CUSTOM_COLORS.length];
+    ds.push({
+      label:`+${days}d`,
+      data:sp.map(S=>{
+        let p=0;
+        for(const l of state.legs){
+          const sign=l.action==='buy'?1:-1;
+          const ep=entryPx(l);
+          const ivFut=scenarioIV(l,S);
+          const Tnow=getT(l.exp);
+          const Tfut=Math.max(0,Tnow-days/365);
+          const cp=bsPrice(S,l.K,Tfut,state.rate,ivFut,l.type);
+          p+=sign*(cp-ep)*l.qty*100;
+        }
+        return p;
+      }),
+      borderColor:col,backgroundColor:'transparent',
+      borderWidth:1.5,borderDash:[3,2],pointRadius:0,tension:0.1,
+    });
+  });
+
+  return ds;
+}
+
+// Inline Chart.js plugin: draws zero line + current spot price line on every render
+const refLinesPlugin={
+  id:'refLines',
+  afterDraw(chart){
+    const{ctx,scales:{x,y},data}=chart;
+    const labels=data.labels;
+    if(!labels||!labels.length)return;
+    ctx.save();
+
+    // ── Zero P&L line (horizontal) ──
+    if(y.min<=0&&y.max>=0){
+      const y0=y.getPixelForValue(0);
+      ctx.strokeStyle='rgba(200,200,200,0.45)';
+      ctx.lineWidth=1.5;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(x.left,y0);
+      ctx.lineTo(x.right,y0);
+      ctx.stroke();
+      // Label
+      ctx.fillStyle='rgba(200,200,200,0.55)';
+      ctx.font='8px monospace';
+      ctx.textAlign='right';
+      ctx.fillText('$0',x.left-3,y0+3);
+    }
+
+    // ── Current spot price line (vertical) ──
+    // Find the label index closest to state.spot
+    let closestIdx=0,minDiff=Infinity;
+    labels.forEach((v,i)=>{
+      const d=Math.abs(Number(v)-state.spot);
+      if(d<minDiff){minDiff=d;closestIdx=i;}
+    });
+    const xPx=x.getPixelForValue(closestIdx);
+    if(xPx>=x.left&&xPx<=x.right){
+      ctx.strokeStyle='rgba(230,180,50,0.55)';
+      ctx.lineWidth=1.5;
+      ctx.setLineDash([5,4]);
+      ctx.beginPath();
+      ctx.moveTo(xPx,y.top);
+      ctx.lineTo(xPx,y.bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Label at top
+      ctx.fillStyle='rgba(230,180,50,0.85)';
+      ctx.font='bold 8px monospace';
+      ctx.textAlign='center';
+      const label='$'+state.spot;
+      const tw=ctx.measureText(label).width;
+      ctx.fillStyle='rgba(20,20,20,0.7)';
+      ctx.fillRect(xPx-tw/2-3,y.top+1,tw+6,12);
+      ctx.fillStyle='rgba(230,180,50,0.95)';
+      ctx.fillText(label,xPx,y.top+10);
+    }
+
+    ctx.restore();
+  }
+};
+
+function renderChart(){
+  if(state.chartView==='smile'){
+    if(chart){chart.destroy();chart=null;}
+    renderSmileChart();
+    return;
+  }
+  const sp=chartSpots();const ds=buildDatasets(sp);
+  const ctx=document.getElementById('pnlChart').getContext('2d');
+  if(chart){
+    // Destroy and recreate if dataset count changed (custom lines added/removed)
+    if(chart.data.datasets.length!==ds.length){chart.destroy();chart=null;}
+    else{chart.data={labels:sp,datasets:ds};chart.update('none');return;}
+  }
+  chart=new Chart(ctx,{
+    type:'line',data:{labels:sp,datasets:ds},
+    plugins:[refLinesPlugin],
+    options:{
+      responsive:true,maintainAspectRatio:false,animation:{duration:80},
+      interaction:{mode:'index',intersect:false},
+      plugins:{
+        legend:{labels:{color:'#8b949e',font:{size:9},usePointStyle:true,boxWidth:7}},
+        tooltip:{
+          backgroundColor:'#161b22',borderColor:'#30363d',borderWidth:1,
+          titleColor:'#c9d1d9',bodyColor:'#8b949e',
+          callbacks:{
+            title:i=>`MSTR Spot: $${i[0].label}`,
+            label:i=>`${i.dataset.label}: ${i.raw>=0?'+':''}$${Math.round(i.raw).toLocaleString()}`,
+          }
+        }
+      },
+      scales:{
+        x:{
+          title:{display:true,text:'MSTR Spot Price (USD)',color:'#8b949e',font:{size:10},padding:{top:4}},
+          ticks:{color:'#8b949e',font:{size:9},maxTicksLimit:10,
+            callback:function(v){return '$'+Number(this.getLabelForValue(v)).toLocaleString();}},
+          grid:{color:'#21262d'}
+        },
+        y:{
+          title:{display:true,text:'Options P&L (USD)',color:'#8b949e',font:{size:10},padding:{bottom:4}},
+          ticks:{color:'#8b949e',font:{size:9},
+            callback:v=>{const a=Math.abs(v);return(v>=0?'+':'-')+'$'+(a>=1000?(a/1000).toFixed(0)+'k':a.toFixed(0));}},
+          grid:{
+            color:ctx=>ctx.tick.value===0?'rgba(200,200,200,0.0)':'#21262d'
+          },
+          border:{dash:[2,2]}
+        }
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// HEATMAP
+// ═══════════════════════════════════════════════════════
+function renderHeatmap(){
+  const canvas=document.getElementById('heatmapCanvas');
+  const par=canvas.parentElement;
+  const dpr=window.devicePixelRatio||1;
+  const cw=Math.max(100,par.clientWidth-16);
+  const ch=Math.max(40,par.clientHeight-28);
+  canvas.style.width=cw+'px';canvas.style.height=ch+'px';
+  canvas.width=Math.round(cw*dpr);canvas.height=Math.round(ch*dpr);
+  const ctx=canvas.getContext('2d');
+  ctx.scale(dpr,dpr);ctx.clearRect(0,0,cw,ch);
+
+  if(state.legs.length===0){
+    ctx.fillStyle='#8b949e';ctx.font='11px sans-serif';ctx.textAlign='center';
+    ctx.fillText('Load a preset or add legs to see heatmap',cw/2,ch/2);return;
+  }
+  const PAD_B=14,PAD_L=26;
+  const COLS=80,ROWS=Math.max(6,Math.floor((ch-PAD_B)/6));
+  const cW=(cw-PAD_L)/COLS,rH=(ch-PAD_B)/ROWS;
+  // Use same x-axis range as P&L chart so current-spot line visually moves with slider
+  const lo=+document.getElementById('rMin').value;
+  const hi=+document.getElementById('rMax').value;
+  const maxDays=Math.max(30,...state.legs.map(l=>getT(l.exp)*365));
+
+  const grid=[];let minP=Infinity,maxP=-Infinity;
+  for(let r=0;r<ROWS;r++){
+    grid[r]=[];
+    for(let c=0;c<COLS;c++){
+      const spot=lo+(hi-lo)*c/(COLS-1);
+      const days=maxDays*(1-r/(ROWS-1));
+      let pnl=0;
+      for(const l of state.legs){
+        const rem=Math.max(0,getT(l.exp)*365-(maxDays-days));
+        const sign=l.action==='buy'?1:-1;
+        const cellIV=scenarioIV(l,spot); // smile at this cell's spot, or flat, or back-solved
+        pnl+=sign*(bsPrice(spot,l.K,rem/365,state.rate,cellIV,l.type)-entryPx(l))*l.qty*100;
+      }
+      grid[r][c]=pnl;
+      if(pnl<minP)minP=pnl;if(pnl>maxP)maxP=pnl;
+    }
+  }
+
+  // Normalise gains and losses INDEPENDENTLY so that:
+  // - the max profit cell always shows full green
+  // - the max loss cell always shows full red
+  // Without this, a short call with +$1,500 max gain and -$140,000 max loss
+  // would make every profitable cell appear nearly black.
+  const maxGain=Math.max(maxP,1);
+  const maxLoss=Math.max(Math.abs(minP),1);
+
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    const pnl=grid[r][c];
+    let rv,gv,bv;
+    if(pnl>=0){
+      const t=pnl/maxGain;           // 0 → 1
+      rv=Math.round(20*(1-t));
+      gv=Math.round(185*t+30*(1-t)); // dark green → bright green
+      bv=Math.round(50*t);
+    } else {
+      const t=(-pnl)/maxLoss;        // 0 → 1
+      rv=Math.round(200*t+50*(1-t)); // dark red → bright red
+      gv=Math.round(30*(1-t));
+      bv=Math.round(30*(1-t));
+    }
+    ctx.fillStyle=`rgb(${rv},${gv},${bv})`;
+    ctx.fillRect(PAD_L+c*cW,r*rH,cW-0.5,rH-0.5);
+  }
+
+  // Zero-crossing line: find column where P&L crosses from negative to positive
+  // Draw a white contour line along the breakeven boundary
+  for(let r=0;r<ROWS-1;r++){
+    for(let c=0;c<COLS-1;c++){
+      const v00=grid[r][c], v01=grid[r][c+1];
+      const v10=grid[r+1][c];
+      // Horizontal crossing (sign change between adjacent columns)
+      if((v00>=0)!==(v01>=0)){
+        const xFrac=v00/(v00-v01);
+        const xPx=PAD_L+(c+xFrac)*cW;
+        ctx.fillStyle='rgba(255,255,255,0.7)';
+        ctx.fillRect(xPx-0.5,r*rH,1.5,rH);
+      }
+    }
+  }
+
+  // Current spot vertical line — moves when spot slider changes (same x-axis as P&L chart)
+  const spotFrac=Math.max(0,Math.min(1,(state.spot-lo)/(hi-lo)));
+  const mxPx=PAD_L+spotFrac*(COLS-1)*cW+cW/2;
+  ctx.strokeStyle='rgba(255,215,0,.9)';ctx.lineWidth=1.5;ctx.setLineDash([3,3]);
+  ctx.beginPath();ctx.moveTo(mxPx,0);ctx.lineTo(mxPx,ROWS*rH);ctx.stroke();
+  ctx.setLineDash([]);
+  // Spot price label on the line
+  ctx.fillStyle='rgba(255,215,0,.9)';ctx.font='bold 8px monospace';ctx.textAlign='center';
+  ctx.fillText('$'+Math.round(state.spot),mxPx,10);
+
+  // X-axis labels (spot price)
+  ctx.fillStyle='#8b949e';ctx.font='8px monospace';ctx.textAlign='center';
+  const nT=cw<350?3:6;
+  for(let i=0;i<=nT;i++){
+    const c=Math.round(i*(COLS-1)/nT);
+    ctx.fillText('$'+Math.round(lo+(hi-lo)*c/(COLS-1)),PAD_L+c*cW+cW/2,ROWS*rH+11);
+  }
+
+  // Y-axis labels (time)
+  ctx.textAlign='right';
+  ctx.fillText(Math.round(maxDays)+'d',PAD_L-2,8);
+  ctx.fillText('0d',PAD_L-2,ROWS*rH-2);
+
+  // Color scale legend (top-right corner)
+  const fmtK=v=>v>=1000?'+'+(v/1000).toFixed(0)+'k':v>0?'+'+v.toFixed(0):v>=-1000?v.toFixed(0):'-'+(Math.abs(v)/1000).toFixed(0)+'k';
+  const legW=60,legH=8,legX=cw-legW-4,legY=2;
+  // Green gradient (profit)
+  const gGrad=ctx.createLinearGradient(legX,0,legX+legW/2,0);
+  gGrad.addColorStop(0,'rgb(20,50,20)');gGrad.addColorStop(1,'rgb(20,185,50)');
+  ctx.fillStyle=gGrad;ctx.fillRect(legX,legY,legW/2,legH);
+  // Red gradient (loss)
+  const rGrad=ctx.createLinearGradient(legX+legW/2,0,legX+legW,0);
+  rGrad.addColorStop(0,'rgb(200,30,30)');rGrad.addColorStop(1,'rgb(50,30,30)');
+  ctx.fillStyle=rGrad;ctx.fillRect(legX+legW/2,legY,legW/2,legH);
+  ctx.strokeStyle='rgba(255,255,255,.3)';ctx.lineWidth=0.5;ctx.strokeRect(legX,legY,legW,legH);
+  ctx.fillStyle='rgba(255,255,255,.7)';ctx.font='7px monospace';
+  ctx.textAlign='left'; ctx.fillText(fmtK(maxGain),legX,legY+legH+7);
+  ctx.textAlign='center';ctx.fillText('$0',legX+legW/2,legY+legH+7);
+  ctx.textAlign='right'; ctx.fillText(fmtK(-maxLoss),legX+legW,legY+legH+7);
+  canvas.onmousemove=e=>{
+    const rect=canvas.getBoundingClientRect();
+    const c=Math.floor((e.clientX-rect.left-PAD_L)/cW);
+    const r=Math.floor((e.clientY-rect.top)/rH);
+    if(c>=0&&c<COLS&&r>=0&&r<ROWS){
+      const sp=lo+(hi-lo)*c/(COLS-1),dy=maxDays*(1-r/(ROWS-1)),pnl=grid[r][c];
+      document.getElementById('hmTip').innerHTML=
+        `$${Math.round(sp)} · ${Math.round(dy)}d · `+
+        `<span style="color:${pnl>=0?'#3fb950':'#f85149'}">`+
+        `${pnl>=0?'+':''}$${Math.round(pnl).toLocaleString()}</span>`;
+    }
+  };
+  canvas.ontouchmove=e=>{e.preventDefault();canvas.onmousemove({clientX:e.touches[0].clientX,clientY:e.touches[0].clientY});};
+}
+
+// ═══════════════════════════════════════════════════════
+// RENDER SIDEBAR
+// ═══════════════════════════════════════════════════════
+function renderIncomeSummary(){
+  const covered=Math.floor(state.shares/100);
+
+  // Update covered note
+  document.getElementById('coveredNote').innerHTML=
+    `${state.shares} shares → up to <strong style="color:var(--blu)">${covered}</strong> covered call contracts without naked exposure.`;
+
+  // Net premium
+  let netPrem=0,minDTE=Infinity;
+  for(const l of state.legs){
+    const sign=l.action==='sell'?1:-1;
+    netPrem+=sign*entryPx(l)*l.qty*100;
+    const dte=getT(l.exp)*365;
+    if(dte>0&&dte<minDTE)minDTE=dte;
+  }
+
+  const cap=totalCapitalRequired();
+  const ay=annualisedYield();
+  const pmp=probMaxProfit()*100;
+
+  const fmtUSD=v=>(v>=0?'+$':'-$')+Math.abs(Math.round(v)).toLocaleString();
+  const cls=v=>v>=0?'pos':'neg';
+
+  // Net premium
+  const npEl=document.getElementById('iNetPrem');
+  npEl.textContent=state.legs.length?fmtUSD(netPrem):'—';
+  npEl.className='inc-val '+(netPrem>=0?'pos':'neg');
+
+  // Annualised yield
+  const ayEl=document.getElementById('iAnnYield');
+  ayEl.textContent=ay!==null?ay.toFixed(1)+'% /yr':'—';
+  ayEl.className='inc-val '+(ay>0?'pos':'neu');
+
+  // Prob max profit
+  const pmEl=document.getElementById('iProbMax');
+  pmEl.textContent=state.legs.length?pmp.toFixed(0)+'%':'—';
+  pmEl.className='inc-val '+(pmp>=60?'pos':pmp>=40?'neu':'neg');
+
+  // Nearest DTE
+  const dteEl=document.getElementById('iDTE');
+  dteEl.textContent=minDTE<Infinity?Math.round(minDTE)+'d':'—';
+  dteEl.className='inc-val neu';
+
+  // Budget bar
+  const pct=state.cash>0?Math.min(100,cap/state.cash*100):0;
+  const fill=document.getElementById('budgetFill');
+  fill.style.width=pct+'%';
+  fill.style.background=pct>100?'var(--red)':pct>80?'var(--ylw)':'var(--grn)';
+  document.getElementById('capReqVal').textContent=cap?'$'+Math.round(cap).toLocaleString():'$0';
+  const budgEl=document.getElementById('budgetNote');
+  if(!cap){budgEl.textContent='No capital required (all covered calls)';}
+  else if(cap<=state.cash){budgEl.innerHTML=`✓ Within budget — $${Math.round(state.cash-cap).toLocaleString()} remaining`;}
+  else{budgEl.innerHTML=`<span style="color:var(--red)">⚠ Exceeds budget by $${Math.round(cap-state.cash).toLocaleString()} — reduce contracts or add leverage</span>`;}
+}
+
+function renderGreeks(){
+  const g=portGreeks();
+  const fmt=(v,d)=>(v>=0?'+':'')+v.toFixed(d);
+  const cls=v=>v>0?'pos':v<0?'neg':'neu';
+  const set=(id,t,c)=>{const el=document.getElementById(id);el.textContent=t;el.className='gv '+c;};
+  set('gDelta',fmt(g.d,1),cls(g.d));
+  set('gGamma',fmt(g.g,3),cls(g.g));
+  set('gTheta','$'+fmt(g.th,0),cls(g.th));
+  set('gVega','$'+fmt(g.v,0),cls(g.v));
+}
+
+// ═══════════════════════════════════════════════════════
+// LEGS TABLE
+// ═══════════════════════════════════════════════════════
+function renderLegs(){
+  const el=document.getElementById('legsWrap');
+  if(state.legs.length===0){el.innerHTML='<div class="empty">Load a preset or add a leg to begin.</div>';return;}
+  let h=`<table class="lt"><thead><tr>
+    <th>Type</th><th>Act</th><th>Strike</th><th>Expiry</th><th>Qty</th>
+    <th>Entry $</th><th>Now $</th><th>PnL</th><th>Θ/day</th><th>Cap Req</th><th>P(OTM)</th><th></th>
+  </tr></thead><tbody>`;
+  const covered=Math.floor(state.shares/100);
+  let usedCovered=0;
+  for(const l of state.legs){
+    const T=getT(l.exp);
+    const ep=entryPx(l);
+    const cp=bsPrice(state.spot,l.K,T,state.rate,state.iv,l.type);
+    const sign=l.action==='buy'?1:-1;
+    const pnl=sign*(cp-ep)*l.qty*100;
+    const gr=T>0?bsAll(state.spot,l.K,T,state.rate,state.iv,l.type):{theta:0,d2:0};
+    const tht=gr.theta*sign*l.qty*100;
+    const cap=capitalRequired(l);
+    const po=probOTM(l);
+    const itm=l.type==='call'?state.spot>l.K:state.spot<l.K;
+    const mon=state.spot===l.K?'ATM':itm?'ITM':'OTM';
+    // Coverage label for calls
+    let covLabel='';
+    if(l.type==='call'&&l.action==='sell'){
+      const thisCov=Math.min(l.qty,Math.max(0,covered-usedCovered));
+      const thisNaked=l.qty-thisCov;
+      usedCovered+=thisCov;
+      covLabel=thisNaked>0?`<span style="color:var(--red);font-size:8px">${thisNaked}× naked</span>`
+                          :`<span style="color:var(--grn);font-size:8px">covered</span>`;
+    }
+    h+=`<tr>
+      <td><span class="tag t${l.type[0]}">${l.type.toUpperCase()}</span>
+          <span style="font-size:8px;color:var(--mut)">${mon}</span></td>
+      <td><span class="tag t${l.action[0]}">${l.action==='sell'?'SELL':'BUY'}</span>
+          ${covLabel}</td>
+      <td class="mono">$${l.K}</td>
+      <td class="mono" style="font-size:9px">${l.exp}</td>
+      <td class="mono">${l.qty}×</td>
+      <td class="mono">$${ep.toFixed(2)}</td>
+      <td class="mono">$${cp.toFixed(2)}</td>
+      <td class="mono ${pnl>=0?'pos':'neg'}">${pnl>=0?'+':''}$${Math.round(pnl).toLocaleString()}</td>
+      <td class="mono ${tht>=0?'pos':'neg'}">${tht>=0?'+':''}$${Math.round(tht)}</td>
+      <td class="mono" style="color:var(--mut)">${cap?'$'+Math.round(cap).toLocaleString():'—'}</td>
+      <td class="mono ${po===null?'neu':po>.6?'pos':po>.4?'neu':'neg'}">${po!==null?Math.round(po*100)+'%':'—'}</td>
+      <td><button class="btn btnd" style="padding:1px 4px;font-size:9px" onclick="removeLeg(${l.id})">×</button></td>
+    </tr>`;
+  }
+  el.innerHTML=h+'</tbody></table>';
+}
+
+function renderAll(){
+  renderLegs();renderGreeks();renderIncomeSummary();renderChart();renderHeatmap();
+  renderRollSim();
+  const lc=document.getElementById('leapContent');
+  if(lc&&lc.style.display!=='none')renderLeapScanner();
+}
+
+// ═══════════════════════════════════════════════════════
+// FORM
+// ═══════════════════════════════════════════════════════
+let formOpen=false;
+function toggleForm(){
+  formOpen=!formOpen;
+  document.getElementById('addForm').style.display=formOpen?'grid':'none';
+  if(formOpen)fAutoPrice();
+}
+function fAutoPrice(){
+  const T=getT(document.getElementById('fExpiry').value);
+  const K=+document.getElementById('fStrike').value;
+  const type=document.getElementById('fType').value;
+  if(T>0&&K>0){
+    const p=bsPrice(state.spot,K,T,state.rate,state.iv,type);
+    document.getElementById('fPrem').placeholder=`auto ($${p.toFixed(2)})`;
+  }
+}
+function doAddLeg(){
+  const type=document.getElementById('fType').value;
+  const action=document.getElementById('fAction').value==='sell (income)'?'sell':
+                document.getElementById('fAction').value==='buy (hedge)'?'buy':
+                document.getElementById('fAction').value;
+  const K=+document.getElementById('fStrike').value;
+  const exp=document.getElementById('fExpiry').value;
+  const qty=+document.getElementById('fQty').value;
+  const pv=document.getElementById('fPrem').value;
+  const T=getT(exp);
+  const prem=pv?+pv:bsPrice(state.spot,K,T,state.rate,state.iv,type);
+  state.legs.push({id:state.nid++,type,action,K,exp,qty,prem});
+  toggleForm();renderAll();
+}
+function removeLeg(id){state.legs=state.legs.filter(l=>l.id!==id);renderAll();}
+
+function setLev(btn){
+  document.querySelectorAll('.lev-btn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  state.leverage=parseFloat(btn.dataset.lev);
+  renderAll();
+}
+
+// ═══════════════════════════════════════════════════════
+// PRESETS — income focused
+// ═══════════════════════════════════════════════════════
+// Sync Roll Simulator inputs from a leg's parameters
+function syncRsFromLeg(type,action,K,prem){
+  rsState.type=type;rsState.action=action;rsState.K0=K;rsState.prem0=prem;
+  document.getElementById('rsType').value=type;
+  document.getElementById('rsAction').value=action;
+  document.getElementById('rsK0').value=K;
+  document.getElementById('rsPrem0').value=prem.toFixed(2);
+  // Label update: short positions collect premium, long positions pay it
+  const lbl=document.getElementById('rsP0Label');
+  if(lbl) lbl.textContent=action==='sell'?'Prem received $':'Prem paid $';
+}
+
+function loadPreset(name){
+  state.legs=[];state.nid=1;
+  const S=state.spot,iv=state.iv,r=state.rate;
+
+  // Helper: find strike where delta ≈ target, for a given expiry
+  function strikeForDelta(targetDelta,type,exp){
+    const T=getT(exp);
+    if(T<=0)return Math.round(S);
+    // Binary search over strike
+    let lo=S*0.3,hi=S*3;
+    for(let i=0;i<30;i++){
+      const mid=(lo+hi)/2;
+      const{delta}=bsAll(S,mid,T,r,iv,type);
+      const absDelta=Math.abs(delta);
+      if(absDelta>targetDelta)lo=mid;else hi=mid;
+    }
+    return Math.round((lo+hi)/2/5)*5; // round to $5
+  }
+
+  // Date helpers
+  function dateFromNow(days){
+    const d=new Date(state.simDate);
+    d.setDate(d.getDate()+days);
+    return d.toISOString().slice(0,10);
+  }
+
+  // Standard DTE targets
+  const exp7 =dateFromNow(7);
+  const exp30 =dateFromNow(30);
+  const exp45 =dateFromNow(45);
+  const exp60 =dateFromNow(60);
+
+  const mk=(type,action,K,exp,qty)=>({
+    id:state.nid++,type,action,K,exp,qty,
+    prem:bsPrice(S,K,getT(exp),r,iv,type)
+  });
+
+  if(name==='cc_monthly'){
+    // Sell 7 covered calls, 30 DTE, Δ≈0.20 (OTM)
+    const K=strikeForDelta(0.20,'call',exp30);
+    const prem=bsPrice(S,K,getT(exp30),r,iv,'call');
+    state.legs=[mk('call','sell',K,exp30,7)];
+    syncRsFromLeg('call','sell',K,prem);
+  }
+  if(name==='cc_weekly'){
+    // Sell 7 covered calls, 7 DTE, Δ≈0.20
+    const K=strikeForDelta(0.20,'call',exp7);
+    const prem=bsPrice(S,K,getT(exp7),r,iv,'call');
+    state.legs=[mk('call','sell',K,exp7,7)];
+    syncRsFromLeg('call','sell',K,prem);
+  }
+  if(name==='csp'){
+    // Sell 1 cash-secured put, 30 DTE, Δ≈0.25 (slightly OTM)
+    const K=strikeForDelta(0.25,'put',exp30);
+    const perContract=K*100/state.leverage;
+    const qty=Math.max(1,Math.floor(state.cash/perContract));
+    const prem=bsPrice(S,K,getT(exp30),r,iv,'put');
+    state.legs=[mk('put','sell',K,exp30,qty)];
+    syncRsFromLeg('put','sell',K,prem);
+  }
+  if(name==='strangle'){
+    // Sell OTM call (Δ0.20) + OTM put (Δ0.20), 30 DTE — sync roll sim to the call leg
+    const callK=strikeForDelta(0.20,'call',exp30);
+    const putK =strikeForDelta(0.20,'put', exp30);
+    const callPrem=bsPrice(S,callK,getT(exp30),r,iv,'call');
+    state.legs=[
+      mk('call','sell',callK,exp30,7),
+      mk('put', 'sell',putK, exp30,1),
+    ];
+    syncRsFromLeg('call','sell',callK,callPrem);
+  }
+  if(name==='condor'){
+    // Iron condor: sell Δ0.20 call + sell Δ0.20 put, buy wings ~7% further out
+    const callK=strikeForDelta(0.20,'call',exp45);
+    const putK =strikeForDelta(0.20,'put', exp45);
+    const wingWidth=Math.round(S*0.07/5)*5;
+    const callPrem=bsPrice(S,callK,getT(exp45),r,iv,'call');
+    state.legs=[
+      mk('call','sell',callK,          exp45,7),
+      mk('call','buy', callK+wingWidth,exp45,7),
+      mk('put', 'sell',putK,           exp45,1),
+      mk('put', 'buy', putK-wingWidth, exp45,1),
+    ];
+    syncRsFromLeg('call','sell',callK,callPrem);
+  }
+  if(name==='wheel'){
+    // Cash-secured put to accumulate + covered calls for income
+    const callK=strikeForDelta(0.20,'call',exp30);
+    const putK =strikeForDelta(0.25,'put', exp30);
+    const perContract=putK*100/state.leverage;
+    const cspQty=Math.max(1,Math.floor(state.cash/perContract));
+    const callPrem=bsPrice(S,callK,getT(exp30),r,iv,'call');
+    state.legs=[
+      mk('call','sell',callK,exp30,7),
+      mk('put', 'sell',putK, exp30,cspQty),
+    ];
+    syncRsFromLeg('call','sell',callK,callPrem);
+  }
+  if(name==='leap'){
+    // Buy 1 LEAP call, Jan 2028, ATM strike
+    const expLeap='2028-01-16';
+    const K=Math.round(S/5)*5; // ATM
+    const T=getT(expLeap);
+    const prem=bsPrice(S,K,T,r,iv,'call');
+    state.legs=[{id:state.nid++,type:'call',action:'buy',K,exp:expLeap,qty:1,prem}];
+    // Pre-fill roll sim
+    document.getElementById('rsK0').value=K;
+    document.getElementById('rsPrem0').value=prem.toFixed(1);
+    document.getElementById('rsType').value='call';
+    document.getElementById('rsAction').value='buy';
+    rsState.type='call';rsState.action='buy';rsState.K0=K;rsState.prem0=prem;
+    // Auto-enable vs Shares line for comparison
+    if(!state.lines.shares){
+      state.lines.shares=true;
+      document.querySelectorAll('.tgl[data-k="shares"]').forEach(b=>b.classList.add('on'));
+    }
+  }
+
+  renderAll();
+}
+
+// ═══════════════════════════════════════════════════════
+// CONTROLS
+// ═══════════════════════════════════════════════════════
+function syncSpot(v){
+  state.spot=+v;
+  document.getElementById('dSpot').textContent='$'+v;
+  document.getElementById('sSpot').value=v;
+  document.getElementById('iSpot').value=v;
+  renderAll();
+}
+function syncIV(v){
+  state.iv=+v/100;
+  document.getElementById('dIV').textContent=v+'%';
+  document.getElementById('sIV').value=v;
+  document.getElementById('iIV').value=v;
+  renderAll();
+}
+function togLine(btn){
+  state.lines[btn.dataset.k]=!state.lines[btn.dataset.k];
+  btn.classList.toggle('on');renderChart();
+}
+
+// ═══════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════
+window.addEventListener('load',()=>{
+  document.getElementById('fStrike').value=state.spot;
+  initResizers();
+  // Check for Saxo OAuth callback (#access_token= in fragment) before normal init
+  if(window.location.hash.includes('access_token=')){
+    loadPreset('wheel'); // default state first, then restore overwrites it
+    handleSaxoCallback(); // restores saved state + activates token
+  } else {
+    loadPreset('wheel');
+    renderRollSim();
+  }
+});
+let rzTimer;
+window.addEventListener('resize',()=>{
+  clearTimeout(rzTimer);
+  rzTimer=setTimeout(()=>{renderChart();renderHeatmap();},80);
+});
+</script>
+</body>
+</html>
