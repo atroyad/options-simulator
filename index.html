@@ -1836,37 +1836,46 @@ async function fetchSaxoData(btn,status){
       }catch(e){console.warn('Yahoo proxy spot failed:',e);}
     }
 
-    // ── Step 3: MSTR options via contractoptionspaces → contractoptions ──
-    // Root: MSTR:xcbf, GroupOptionRootId=2517 (confirmed from OPRA keyword search)
+    // ── Step 3: MSTR options — fetch all contracts via OptionRootId ──
+    // Root: MSTR:xcbf, Identifier=2517 (confirmed from OPRA keyword search)
+    // contractoptionspaces/contractoptions don't exist on live API — use instruments directly.
     let optInstruments=[];
     const MSTR_ROOT_ID=2517;
-    console.log('Fetching option spaces for root',MSTR_ROOT_ID);
-    const rSpaces=await saxoFetch(`/ref/v1/instruments/contractoptionspaces?OptionRootId=${MSTR_ROOT_ID}&$top=50`);
-    const dSpaces=await rSpaces.json();
-    console.log('contractoptionspaces:',JSON.stringify(dSpaces).slice(0,600));
-    const spaces=dSpaces.Data||dSpaces.OptionSpace||[];
 
-    if(spaces.length>0){
-      const near=spaces.slice(0,6); // nearest 6 expiries
-      for(const sp of near){
-        const spaceId=sp.OptionSpaceId||sp.Identifier||sp.Id;
-        const expiry=sp.ExpiryDate||sp.Expiry||'';
-        if(!spaceId) continue;
-        const rc=await saxoFetch(`/ref/v1/instruments/contractoptions?OptionSpaceId=${spaceId}&$top=200`);
-        const dc=await rc.json();
-        if(near.indexOf(sp)===0) console.log(`contractoptions spaceId=${spaceId} (${expiry}):`,JSON.stringify(dc).slice(0,500));
-        const contracts=(dc.Data||[]).filter(o=>o.StrikePrice&&o.PutCall);
-        contracts.forEach(o=>{if(!o.ExpiryDate&&expiry) o.ExpiryDate=expiry;});
-        optInstruments.push(...contracts);
+    // Fetch up to 500 contracts — paginate if needed
+    const rd=await saxoFetch(`/ref/v1/instruments?OptionRootId=${MSTR_ROOT_ID}&AssetTypes=StockOption&$top=500`);
+    const dd=await rd.json();
+    // Log FULL first item so we can see all available fields
+    console.log('OptionRootId=2517 first item FULL:',JSON.stringify((dd.Data||[])[0]));
+    console.log('OptionRootId=2517 total returned:',dd.Data?.length,'__next:',dd.__next);
+
+    // Try to extract contracts — Saxo may encode expiry/strike in the Symbol field
+    // e.g. "MSTR 260117C00200000" = MSTR Jan17'26 Call $200
+    const parseSymbol=sym=>{
+      if(!sym) return null;
+      // OCC format: TICKER YYMMDD[C/P]XXXXXXX (strike × 1000)
+      const m=sym.match(/(\w+)\s+(\d{6})([CP])(\d{8})/);
+      if(m){
+        const y='20'+m[2].slice(0,2),mo=m[2].slice(2,4),d=m[2].slice(4,6);
+        return{exp:`${y}-${mo}-${d}`,type:m[3]==='C'?'call':'put',K:parseInt(m[4])/1000};
       }
-      console.log(`contractoptions total: ${optInstruments.length} contracts`);
-    } else {
-      console.warn('contractoptionspaces empty, trying GroupOptionRootId direct query');
-      const rd=await saxoFetch(`/ref/v1/instruments?GroupOptionRootId=${MSTR_ROOT_ID}&AssetTypes=StockOption&$top=500`);
-      const dd=await rd.json();
-      console.log('Direct query sample:',JSON.stringify((dd.Data||[]).slice(0,2)));
-      optInstruments=(dd.Data||[]).filter(o=>o.ExpiryDate&&o.StrikePrice&&o.PutCall);
+      return null;
+    };
+
+    const allData=dd.Data||[];
+    for(const o of allData){
+      let exp=o.ExpiryDate?.slice(0,10)||'';
+      let K=o.StrikePrice||0;
+      let type=(o.PutCall||'').toLowerCase().includes('put')?'put':
+               (o.PutCall||'').toLowerCase().includes('call')?'call':'';
+      // Fall back to Symbol parsing if fields missing
+      if(!exp||!K||!type){
+        const parsed=parseSymbol(o.Symbol||o.Description||'');
+        if(parsed){exp=parsed.exp;K=parsed.K;type=parsed.type;}
+      }
+      if(exp&&K>0&&type) optInstruments.push({...o,ExpiryDate:exp,StrikePrice:K,PutCall:type==='call'?'Call':'Put',_type:type});
     }
+    console.log(`Parsed ${optInstruments.length} contracts from ${allData.length} items`);
 
     if(optInstruments.length===0){
       // Saxo OPRA subscription may not include MSTR options — show spot only with clear message
@@ -1924,7 +1933,7 @@ async function fetchSaxoData(btn,status){
 
       const K=inst.StrikePrice??p.DisplayAndFormat?.StrikePrice??p.Greeks?.StrikePrice;
       if(!K||K<=0) continue;
-      const type=(inst.PutCall||inst.OptionType||'').toLowerCase().includes('put')?'put':'call';
+      const type=inst._type||(inst.PutCall||inst.OptionType||'').toLowerCase().includes('put')?'put':'call';
       const exp=inst.ExpiryDate?.slice(0,10)||inst.Expiry?.slice(0,10)||'';
       const bid=p.Quote?.Bid||0;
       const ask=p.Quote?.Ask||0;
