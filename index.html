@@ -920,7 +920,57 @@ const state={
   saxoEnv:'sim',       // 'sim' = developer.saxo SIM gateway | 'live' = real account gateway
   saxoClientId:'',     // OAuth app client_id from developer.saxo.com → Apps
   saxoProxyUrl:'',     // Cloudflare Worker proxy URL for token exchange (avoids CORS)
+  saxoContractCache:null,    // cached ATM contracts array (avoids re-discovery on auto-refresh)
+  saxoContractCacheTime:0,   // ms timestamp of last cache fill
 };
+
+// ── Auto-refresh timer ──
+let _liveTimer=null;
+function startLiveTimer(){
+  stopLiveTimer();
+  // Saxo: 30 s (data is 15-min delayed + full fetch takes ~5-10 s anyway)
+  // Yahoo: 5 s (just spot + one options page)
+  const delay=state.liveSource==='saxo'?30000:5000;
+  _liveTimer=setInterval(()=>{
+    if(state.mode==='live'&&!document.hidden) fetchLiveData();
+  },delay);
+}
+function stopLiveTimer(){
+  if(_liveTimer){clearInterval(_liveTimer);_liveTimer=null;}
+}
+
+// ── Two-pass smile fitting (ATM-weighted) ──
+// Returns {skew,conv} or null if insufficient data.
+function fitSmileParams(fitPts,spot,baseIV){
+  if(!fitPts||fitPts.length<3) return null;
+  const wt=o=>1/(1+Math.abs(Math.log(o.K/spot))*8); // higher weight near ATM
+  let bestSkew=-0.12,bestConv=0.20,bestErr=Infinity;
+  // Pass 1: coarse grid
+  for(let sk=-0.70;sk<=0.20;sk+=0.025){
+    for(let cv=0.0;cv<=1.5;cv+=0.05){
+      let err=0;
+      for(const o of fitPts) err+=wt(o)*(smileIV(o.K,spot,baseIV,sk,cv)-o.iv)**2;
+      if(err<bestErr){bestErr=err;bestSkew=sk;bestConv=cv;}
+    }
+  }
+  // Pass 2: fine grid around best
+  for(let sk=bestSkew-0.05;sk<=bestSkew+0.05;sk+=0.005){
+    for(let cv=Math.max(0,bestConv-0.10);cv<=bestConv+0.10;cv+=0.01){
+      let err=0;
+      for(const o of fitPts) err+=wt(o)*(smileIV(o.K,spot,baseIV,sk,cv)-o.iv)**2;
+      if(err<bestErr){bestErr=err;bestSkew=sk;bestConv=cv;}
+    }
+  }
+  return{skew:Math.round(bestSkew*1000)/1000,conv:Math.round(bestConv*1000)/1000};
+}
+function applySmileParams(p){
+  if(!p)return;
+  state.smileSkew=p.skew;state.smileConv=p.conv;
+  const skEl=document.getElementById('smileSkewIn');
+  const cvEl=document.getElementById('smileConvIn');
+  if(skEl){skEl.value=p.skew;document.getElementById('smileSkewVal').textContent=p.skew.toFixed(2);}
+  if(cvEl){cvEl.value=p.conv;document.getElementById('smileConvVal').textContent=p.conv.toFixed(2);}
+}
 
 // Color palette for custom day lines — cycles through these
 const CUSTOM_COLORS=[
@@ -1212,24 +1262,21 @@ function renderPricesTable(){
 }
 
 function addLegFromPrice(o){
-  // Switch to builder tab and pre-fill add-leg form
-  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('on'));
-  document.querySelectorAll('.tab-btn').forEach(b=>{if(b.dataset.tab==='builder') b.classList.add('on');});
+  // Switch to builder tab
   switchBuilderTab(document.querySelector('.tab-btn[data-tab="builder"]'));
-  // Fill form fields
+  // Pre-fill form fields (fExpiry is the correct ID — not fExp)
   const fType=document.getElementById('fType');
   const fAction=document.getElementById('fAction');
   const fStrike=document.getElementById('fStrike');
   const fPrem=document.getElementById('fPrem');
-  const fExp=document.getElementById('fExp');
+  const fExpiry=document.getElementById('fExpiry');
   if(fType) fType.value=o.type;
-  if(fAction) fAction.value='buy'; // default
+  if(fAction) fAction.value='sell'; // income default; user can change before adding
   if(fStrike) fStrike.value=o.K;
   if(fPrem) fPrem.value=o.mid?o.mid.toFixed(2):'';
-  if(fExp) fExp.value=o.exp;
-  // Open the form if hidden
-  const form=document.getElementById('addLegForm');
-  if(form&&form.style.display==='none') toggleForm();
+  if(fExpiry&&o.exp) fExpiry.value=o.exp;
+  // Open the form if not already open (formOpen is the authoritative flag)
+  if(!formOpen) toggleForm(); else fAutoPrice();
 }
 
 function renderLeapScanner(){
@@ -1557,7 +1604,7 @@ function setMode(m){
   document.getElementById('liveBtn').style.display=isLive?'':'none';
   document.getElementById('liveStatus').style.display=isLive?'':'none';
   updateSaxoUI();
-  if(!isLive) setLiveLock(false);
+  if(!isLive){ setLiveLock(false); stopLiveTimer(); }
   // Don't auto-fetch if Saxo live — user must login first
   if(isLive&&!(state.liveSource==='saxo'&&state.saxoEnv==='live'&&!state.saxoToken)) fetchLiveData();
 }
@@ -1861,35 +1908,18 @@ async function fetchLiveData(){
     if(atmCall?.impliedVolatility>0) syncIV(Math.round(atmCall.impliedVolatility*100));
 
     // ── Fit smile parameters to live market data ──
-    // Only use strikes with reasonable IV (0.10–5.0) and non-zero bids
     const fitPts=state.liveOptions.filter(o=>o.iv>0.10&&o.iv<5.0&&o.bid>0);
-    if(fitPts.length>=3){
-      const baseIV=state.iv;
-      // Grid search over skew × conv (fast, 2-param, no derivatives needed)
-      let bestSkew=-0.12,bestConv=0.20,bestErr=Infinity;
-      for(let sk=-0.50;sk<=0.15;sk+=0.025){
-        for(let cv=0.0;cv<=1.0;cv+=0.05){
-          let err=0;
-          for(const o of fitPts){
-            const model=smileIV(o.K,spot,baseIV,sk,cv);
-            err+=(model-o.iv)**2;
-          }
-          if(err<bestErr){bestErr=err;bestSkew=sk;bestConv=cv;}
-        }
-      }
-      state.smileSkew=Math.round(bestSkew*1000)/1000;
-      state.smileConv=Math.round(bestConv*1000)/1000;
-      // Update UI sliders
-      const skEl=document.getElementById('smileSkewIn');
-      const cvEl=document.getElementById('smileConvIn');
-      if(skEl){skEl.value=state.smileSkew;document.getElementById('smileSkewVal').textContent=state.smileSkew.toFixed(2);}
-      if(cvEl){cvEl.value=state.smileConv;document.getElementById('smileConvVal').textContent=state.smileConv.toFixed(2);}
-      status.textContent=`$${spot.toFixed(2)} · ${state.liveOptions.length} options · smile fitted (skew=${state.smileSkew}, conv=${state.smileConv})`;
+    const smileP=fitSmileParams(fitPts,spot,state.iv);
+    applySmileParams(smileP);
+    if(smileP){
+      status.textContent=`$${spot.toFixed(2)} · ATM IV ${Math.round(state.iv*100)}% · ${state.liveOptions.length} opts · smile fitted (skew=${state.smileSkew}, conv=${state.smileConv}) · ⟳ auto`;
     } else {
-      status.textContent=`$${spot.toFixed(2)} · ${state.liveOptions.length} options loaded`;
+      status.textContent=`$${spot.toFixed(2)} · ${state.liveOptions.length} options loaded · ⟳ auto`;
     }
     status.style.color='var(--grn)';
     btn.textContent='⟳ Refresh';
+    if(state.liveOptions.length>0) setLiveLock(true);
+    startLiveTimer();
     renderAll();
   }catch(e){
     status.textContent='Failed — check network / CORS';
@@ -1924,30 +1954,16 @@ function fitSmileAndFinish(spot,status,btn,note=''){
     syncIV(Math.round(atmIV*100));
     console.log(`ATM IV set: ${(atmIV*100).toFixed(1)}% from ${atm.type} K=${atm.K} (pool size ${pool.length})`);
   }
-  // Grid-search smile fit
+  // Two-pass ATM-weighted smile fit
   const fitPts=validOpts.filter(o=>o.bid>0);
-  if(fitPts.length>=3){
-    const baseIV=state.iv;
-    let bestSkew=-0.12,bestConv=0.20,bestErr=Infinity;
-    for(let sk=-0.50;sk<=0.15;sk+=0.025){
-      for(let cv=0.0;cv<=1.0;cv+=0.05){
-        let err=0;
-        for(const o of fitPts) err+=(smileIV(o.K,spot,baseIV,sk,cv)-o.iv)**2;
-        if(err<bestErr){bestErr=err;bestSkew=sk;bestConv=cv;}
-      }
-    }
-    state.smileSkew=Math.round(bestSkew*1000)/1000;
-    state.smileConv=Math.round(bestConv*1000)/1000;
-    const skEl=document.getElementById('smileSkewIn');
-    const cvEl=document.getElementById('smileConvIn');
-    if(skEl){skEl.value=state.smileSkew;document.getElementById('smileSkewVal').textContent=state.smileSkew.toFixed(2);}
-    if(cvEl){cvEl.value=state.smileConv;document.getElementById('smileConvVal').textContent=state.smileConv.toFixed(2);}
-  }
+  const smileP=fitSmileParams(fitPts,spot,state.iv);
+  applySmileParams(smileP);
   const ivStr=atmIV>0?` · ATM IV ${(atmIV*100).toFixed(0)}%`:'';
-  status.textContent=`Saxo: $${spot.toFixed(2)}${ivStr} · ${state.liveOptions.length} options${note} · smile fitted`;
+  status.textContent=`Saxo: $${spot.toFixed(2)}${ivStr} · ${state.liveOptions.length} opts${note} · smile fitted (skew=${state.smileSkew.toFixed(3)}, conv=${state.smileConv.toFixed(3)}) · ⟳ auto`;
   status.style.color='var(--grn)';
   btn.textContent='⟳ Refresh';btn.disabled=false;
   if(state.liveOptions.length>0) setLiveLock(true);
+  startLiveTimer();
   // Refresh prices table if open
   if(document.querySelector('.tab-btn[data-tab="prices"]')?.classList.contains('on')) renderPricesTable();
   renderAll();
@@ -2018,7 +2034,6 @@ async function fetchSaxoData(btn,status){
     // ── Step 3: MSTR options — fetch individual contracts via root details + expiry dates ──
     // Root: MSTR:xcbf, Identifier=2517. instruments endpoint only returns roots, not contracts.
     // Correct approach: get expiry dates from root details, then query per expiry.
-    let optInstruments=[];
     const MSTR_ROOT_ID=2517;
 
     // saxoJson: fetch + safe JSON parse; returns null on error/404
@@ -2031,100 +2046,66 @@ async function fetchSaxoData(btn,status){
       }catch(e){return null;}
     };
 
-    // Step 3a: generate upcoming MSTR option expiry dates
-    // US equity options expire on 3rd Friday monthly + every Friday (weeklies)
-    const expiries=[];
-    const now=new Date();
-    // Weeklies: next 8 Fridays
-    for(let w=1;w<=8;w++){
-      const fd=new Date(now);
-      const daysToFri=(5-fd.getDay()+7)%7||7;
-      fd.setDate(fd.getDate()+daysToFri+(w-1)*7);
-      expiries.push(fd.toISOString().slice(0,10));
-    }
-    // Monthly: 3rd Friday for next 6 months
-    for(let m=0;m<6;m++){
-      const d=new Date(now.getFullYear(),now.getMonth()+m,1);
-      let fri=0,cnt=0;
-      for(let day=1;day<=31;day++){
-        if(new Date(d.getFullYear(),d.getMonth(),day).getDay()===5){
-          if(++cnt===3){fri=day;break;}
+    // ── Step 3: contract discovery (cached 5 min to speed up auto-refresh) ──
+    const CACHE_TTL=5*60*1000;
+    let atmContracts;
+    if(state.saxoContractCache&&(Date.now()-state.saxoContractCacheTime)<CACHE_TTL){
+      atmContracts=state.saxoContractCache;
+      console.log(`Using cached contracts (${atmContracts.length}), age ${((Date.now()-state.saxoContractCacheTime)/1000).toFixed(0)}s`);
+    } else {
+      let optInstruments=[];
+      const dSpaces=await saxoJson(`/ref/v1/instruments/contractoptionspaces/${MSTR_ROOT_ID}`);
+      const spaces=dSpaces?.OptionSpace||[];
+      console.log(`Got ${spaces.length} option spaces`);
+      for(const sp of spaces){
+        const exp=(sp.Expiry||sp.ExpiryDate||'').slice(0,10);
+        if(!exp) continue;
+        for(const o of (sp.SpecificOptions||[])){
+          if(o.TradingStatus!=='Tradable') continue;
+          optInstruments.push({
+            Identifier: o.Uic, ExpiryDate: exp, StrikePrice: o.StrikePrice,
+            PutCall: o.PutCall, _type: o.PutCall==='Call'?'call':'put',
+            UnderlyingUic: o.UnderlyingUic||uic,
+          });
         }
       }
-      if(fri){
-        const exp=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(fri).padStart(2,'0')}`;
-        if(!expiries.includes(exp)&&new Date(exp)>now) expiries.push(exp);
-      }
-    }
-    expiries.sort();
-    console.log('Expiry dates to try:',expiries);
+      console.log(`Total contracts extracted: ${optInstruments.length}`);
 
-    // Step 3b: contractoptionspaces/{OptionRootId} — OptionRootId is a PATH param
-    const dSpaces=await saxoJson(`/ref/v1/instruments/contractoptionspaces/${MSTR_ROOT_ID}`);
-    console.log('contractoptionspaces/2517:',JSON.stringify(dSpaces).slice(0,800));
+      if(optInstruments.length===0){
+        // Saxo OPRA subscription may not include MSTR options — fall back to Yahoo
+        const yahooOptsUrl=proxyBase?`${proxyBase}/yahoo?ticker=MSTR&type=options`:null;
+        if(yahooOptsUrl){
+          try{
+            const yro=await fetch(yahooOptsUrl,{cache:'no-cache'});
+            const ydo=await yro.json();
+            const chain=ydo.optionChain?.result?.[0];
+            if(chain?.options?.[0]){
+              const toDate=ts=>new Date(ts*1000).toISOString().slice(0,10);
+              const opts=chain.options[0];
+              state.liveOptions=[
+                ...opts.calls.filter(o=>o.impliedVolatility>0).map(o=>({K:o.strike,iv:o.impliedVolatility,type:'call',exp:toDate(o.expiration),bid:o.bid,ask:o.ask,mid:(o.bid+o.ask)/2})),
+                ...opts.puts.filter(o=>o.impliedVolatility>0).map(o=>({K:o.strike,iv:o.impliedVolatility,type:'put',exp:toDate(o.expiration),bid:o.bid,ask:o.ask,mid:(o.bid+o.ask)/2})),
+              ];
+            }
+          }catch(e){console.warn('Yahoo options fallback failed:',e);}
+        }
+        if(state.liveOptions.length===0){
+          status.textContent=`Saxo: $${spot.toFixed(2)} · MSTR options unavailable (OPRA subscription needed) — spot price only`;
+          status.style.color='var(--ylw)';btn.textContent='⟳ Refresh';btn.disabled=false;
+          renderAll();return;
+        }
+        fitSmileAndFinish(spot,status,btn);
+        return;
+      }
 
-    // OptionSpace[] is on the root object (not under Data[])
-    // Each space: { Expiry, SpecificOptions: [{PutCall, StrikePrice, Uic, TradingStatus}] }
-    const spaces=dSpaces?.OptionSpace||[];
-    console.log(`Got ${spaces.length} option spaces`);
-    for(const sp of spaces){
-      const exp=(sp.Expiry||sp.ExpiryDate||'').slice(0,10);
-      if(!exp) continue;
-      for(const o of (sp.SpecificOptions||[])){
-        if(o.TradingStatus!=='Tradable') continue;
-        optInstruments.push({
-          Identifier: o.Uic,
-          ExpiryDate: exp,
-          StrikePrice: o.StrikePrice,
-          PutCall: o.PutCall,       // "Call" or "Put"
-          _type: o.PutCall==='Call'?'call':'put',
-          UnderlyingUic: o.UnderlyingUic||uic,
-        });
-      }
-    }
-    console.log(`Total contracts extracted: ${optInstruments.length}, sample:`,JSON.stringify(optInstruments[0]||{}));
-
-    if(optInstruments.length===0){
-      // Saxo OPRA subscription may not include MSTR options — show spot only with clear message
-      const yahooOptsUrl=proxyBase
-        ? `${proxyBase}/yahoo?ticker=MSTR&type=options`
-        : null;
-      if(yahooOptsUrl){
-        // Fall back to Yahoo options data for the smile/IV (spot already from Yahoo)
-        try{
-          const yro=await fetch(yahooOptsUrl,{cache:'no-cache'});
-          const ydo=await yro.json();
-          const chain=ydo.optionChain?.result?.[0];
-          if(chain?.options?.[0]){
-            const toDate=ts=>new Date(ts*1000).toISOString().slice(0,10);
-            const opts=chain.options[0];
-            state.liveOptions=[
-              ...opts.calls.filter(o=>o.impliedVolatility>0).map(o=>({K:o.strike,iv:o.impliedVolatility,type:'call',exp:toDate(o.expiration),bid:o.bid,ask:o.ask,mid:(o.bid+o.ask)/2})),
-              ...opts.puts.filter(o=>o.impliedVolatility>0).map(o=>({K:o.strike,iv:o.impliedVolatility,type:'put',exp:toDate(o.expiration),bid:o.bid,ask:o.ask,mid:(o.bid+o.ask)/2})),
-            ];
-            console.log(`Yahoo fallback: ${state.liveOptions.length} options loaded`);
-          }
-        }catch(e){console.warn('Yahoo options fallback failed:',e);}
-      }
-      if(state.liveOptions.length===0){
-        status.textContent=`Saxo: $${spot.toFixed(2)} · MSTR options unavailable (OPRA subscription needed) — spot price only`;
-        status.style.color='var(--ylw)';btn.textContent='⟳ Refresh';btn.disabled=false;
-        renderAll();return;
-      }
-      // Fit smile from Yahoo fallback options
-      fitSmileAndFinish(spot,status,btn);
-      return;
+      atmContracts=optInstruments.filter(o=>o.StrikePrice>=spot*0.4&&o.StrikePrice<=spot*1.6);
+      state.saxoContractCache=atmContracts;
+      state.saxoContractCacheTime=Date.now();
+      console.log(`ATM-filtered contracts: ${atmContracts.length} of ${optInstruments.length} (cached)`);
     }
 
     // ── Step 4: get prices for all option contracts ──
-    console.log(`Saxo: ${optInstruments.length} contracts, fetching prices…`);
-    console.log('Contract sample:',JSON.stringify(optInstruments[0]).slice(0,400));
-    // Only fetch near-the-money contracts (spot ± 60%) to stay within API limits
-    // and reduce the number of batch calls
-    const atmContracts=optInstruments.filter(o=>
-      o.StrikePrice>=spot*0.4&&o.StrikePrice<=spot*1.6
-    );
-    console.log(`ATM-filtered contracts: ${atmContracts.length} of ${optInstruments.length}`);
+    console.log(`Saxo: fetching prices for ${atmContracts.length} contracts…`);
     const uics=atmContracts.map(o=>o.Identifier);
 
     const priceData=[];
