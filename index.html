@@ -1968,7 +1968,7 @@ async function fetchSaxoData(btn,status){
 
       const K=inst.StrikePrice??p.DisplayAndFormat?.StrikePrice??p.Greeks?.StrikePrice;
       if(!K||K<=0) continue;
-      const type=inst._type||(inst.PutCall||inst.OptionType||'').toLowerCase().includes('put')?'put':'call';
+      const type=inst._type||((inst.PutCall||inst.OptionType||'').toLowerCase().includes('put')?'put':'call');
       const exp=inst.ExpiryDate?.slice(0,10)||inst.Expiry?.slice(0,10)||'';
       const bid=p.Quote?.Bid||0;
       const ask=p.Quote?.Ask||0;
@@ -1985,9 +1985,15 @@ async function fetchSaxoData(btn,status){
       state.liveOptions.push({K,iv,type,exp,bid,ask,mid});
     }
 
+    const marketClosed=priceData.length>0&&priceData[0]?.Quote?.MarketState==='Closed';
+    if(marketClosed&&state.liveOptions.length===0){
+      status.textContent=`Saxo: $${spot.toFixed(2)} · ${priceData.length} contracts found · Market closed — reopen Monday for live prices`;
+      status.style.color='var(--ylw)';btn.textContent='⟳ Refresh';btn.disabled=false;
+      renderAll();return;
+    }
     fitSmileAndFinish(spot,status,btn);
   }catch(e){
-    status.textContent='Saxo fetch failed — check token & CORS (serve via localhost)';
+    status.textContent='Saxo fetch failed — see console';
     status.style.color='var(--red)';
     console.error('Saxo error:',e);
   }
