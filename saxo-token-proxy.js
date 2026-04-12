@@ -37,10 +37,14 @@ export default {
         const ticker = url.searchParams.get('ticker') || 'MSTR';
         const type = url.searchParams.get('type') || 'chart'; // 'chart' or 'options'
         const yahooUrl = type === 'options'
-          ? `https://query1.finance.yahoo.com/v7/finance/options/${ticker}`
-          : `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`;
+          ? `https://query2.finance.yahoo.com/v7/finance/options/${ticker}`
+          : `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`;
         const resp = await fetch(yahooUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0' },
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
+          },
         });
         const data = await resp.text();
         return new Response(data, {

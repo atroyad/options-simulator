@@ -1842,12 +1842,18 @@ async function fetchSaxoData(btn,status){
     let optInstruments=[];
     const MSTR_ROOT_ID=2517;
 
-    // Fetch up to 500 contracts — paginate if needed
-    const rd=await saxoFetch(`/ref/v1/instruments?OptionRootId=${MSTR_ROOT_ID}&AssetTypes=StockOption&$top=500`);
+    // GroupOptionRootId=2517 with SummaryType=ContractOption → individual contracts
+    // SummaryType=ContractOptionRoot → only roots (what we were getting before)
+    const rd=await saxoFetch(`/ref/v1/instruments?GroupOptionRootId=${MSTR_ROOT_ID}&AssetTypes=StockOption&SummaryType=ContractOption&$top=500`);
     const dd=await rd.json();
-    // Log FULL first item so we can see all available fields
-    console.log('OptionRootId=2517 first item FULL:',JSON.stringify((dd.Data||[])[0]));
-    console.log('OptionRootId=2517 total returned:',dd.Data?.length,'__next:',dd.__next);
+    console.log('ContractOption query total:',dd.Data?.length,'first item FULL:',JSON.stringify((dd.Data||[])[0]));
+    // If SummaryType filter not supported, try without it and log what we get
+    if(!dd.Data?.length){
+      const rd2=await saxoFetch(`/ref/v1/instruments?GroupOptionRootId=${MSTR_ROOT_ID}&AssetTypes=StockOption&$top=500`);
+      const dd2=await rd2.json();
+      console.log('GroupOptionRootId no filter: total:',dd2.Data?.length,'first FULL:',JSON.stringify((dd2.Data||[])[0]));
+      dd.Data=dd2.Data;
+    }
 
     // Try to extract contracts — Saxo may encode expiry/strike in the Symbol field
     // e.g. "MSTR 260117C00200000" = MSTR Jan17'26 Call $200
