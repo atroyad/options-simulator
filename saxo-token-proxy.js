@@ -55,9 +55,37 @@ export default {
       }
     }
 
+    // ── GET /saxo — proxy any Saxo OpenAPI call (avoids per-endpoint CORS restrictions) ──
+    // Usage: GET /saxo?env=live&path=/ref/v1/instruments/contractoptionspaces?OptionRootId=2517
+    // Pass Authorization header from browser — worker forwards it to Saxo.
+    if (request.method === 'GET' && url.pathname === '/saxo') {
+      try {
+        const env = url.searchParams.get('env') || 'live';
+        const path = url.searchParams.get('path') || '';
+        if (!path) return new Response(JSON.stringify({ error: 'missing path param' }), {
+          status: 400, headers: { 'Content-Type': 'application/json', ...CORS(origin) },
+        });
+        const base = env === 'sim'
+          ? 'https://gateway.saxobank.com/sim/openapi'
+          : 'https://gateway.saxobank.com/openapi';
+        const saxoUrl = base + path;
+        const auth = request.headers.get('Authorization') || '';
+        const resp = await fetch(saxoUrl, { headers: { Authorization: auth } });
+        const data = await resp.text();
+        return new Response(data, {
+          status: resp.status,
+          headers: { 'Content-Type': 'application/json', ...CORS(origin) },
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: 'saxo_proxy_error', message: String(err) }), {
+          status: 502, headers: { 'Content-Type': 'application/json', ...CORS(origin) },
+        });
+      }
+    }
+
     // ── GET / — health check ──
     if (request.method === 'GET') {
-      return new Response(JSON.stringify({ ok: true, worker: 'mstr-proxy', routes: ['POST / (Saxo token)', 'GET /yahoo (spot price)'] }), {
+      return new Response(JSON.stringify({ ok: true, worker: 'mstr-proxy', routes: ['POST / (Saxo token)', 'GET /yahoo', 'GET /saxo'] }), {
         headers: { 'Content-Type': 'application/json', ...CORS(origin) },
       });
     }

@@ -1787,47 +1787,44 @@ async function fetchSaxoData(btn,status){
     return;
   }
 
-  // SIM environment uses the SIM gateway — tokens from developer.saxo only work here.
-  // Live environment uses the production gateway — requires OAuth with personal account.
-  const BASE=state.saxoEnv==='sim'
+  const isSim=state.saxoEnv==='sim';
+  const BASE=isSim
     ? 'https://gateway.saxobank.com/sim/openapi'
     : 'https://gateway.saxobank.com/openapi';
   const H={'Authorization':'Bearer '+token};
 
+  // Route all Saxo API calls through the Cloudflare Worker proxy when available.
+  // This avoids CORS issues on endpoints that Saxo hasn't whitelisted for browsers.
+  const proxyBase=state.saxoProxyUrl?state.saxoProxyUrl.replace(/\/$/,''):'';
+  const env=isSim?'sim':'live';
+  // saxoFetch(path) — uses proxy if available, direct otherwise
+  const saxoFetch=path=>{
+    if(proxyBase){
+      return fetch(`${proxyBase}/saxo?env=${env}&path=${encodeURIComponent(path)}`,
+        {headers:H});
+    }
+    return fetch(BASE+path,{headers:H});
+  };
+
   try{
     // ── Step 1: find MSTR instrument Uic ──
-    // No ExchangeId filter — Saxo uses internal IDs, not standard MIC codes
-    const r1=await fetch(
-      `${BASE}/ref/v1/instruments?Keywords=MSTR&AssetTypes=Stock`,
-      {headers:H}
-    );
+    const r1=await saxoFetch('/ref/v1/instruments?Keywords=MSTR&AssetTypes=Stock');
     if(r1.status===401){
-      const envLabel=state.saxoEnv==='sim'?'SIM':'Live';
-      status.textContent=`Token rejected (${envLabel} gateway). ${state.saxoEnv==='sim'?'Copy a fresh token from developer.saxo → token page':'Use 🔐 Login to re-authenticate'}`;
+      status.textContent=`Token rejected — use 🔐 Login to re-authenticate`;
       status.style.color='var(--red)';btn.textContent='⟳ Fetch MSTR';btn.disabled=false;
-      if(state.saxoEnv==='live') state.saxoToken='';
-      return;
+      state.saxoToken='';return;
     }
     const d1=await r1.json();
-    console.log('Saxo MSTR search results:',d1.Data); // debug — visible in browser console
-    // Match on Symbol or Description containing MSTR (Saxo may suffix exchange)
-    const mstr=d1.Data?.find(i=>
-      i.Symbol==='MSTR'||
-      i.Symbol?.startsWith('MSTR')||
-      i.Description?.includes('MicroStrategy')
-    );
+    console.log('Saxo MSTR search results:',d1.Data);
+    const mstr=d1.Data?.find(i=>i.Symbol==='MSTR:xnas'||i.Symbol?.startsWith('MSTR')&&!i.Symbol?.startsWith('MSTX'));
     if(!mstr){
-      // Show what we actually got so user can report it
-      const found=(d1.Data||[]).map(i=>i.Symbol).join(', ')||'nothing';
-      status.textContent=`MSTR not found — got: ${found} (check console for details)`;
-      status.style.color='var(--ylw)';btn.textContent='⟳ Fetch MSTR';btn.disabled=false;
-      return;
+      status.textContent=`MSTR not found — got: ${(d1.Data||[]).map(i=>i.Symbol).join(', ')||'nothing'}`;
+      status.style.color='var(--ylw)';btn.textContent='⟳ Fetch MSTR';btn.disabled=false;return;
     }
     const uic=mstr.Identifier;
     console.log('Saxo MSTR Uic:',uic,'Symbol:',mstr.Symbol,'Desc:',mstr.Description);
 
-    // ── Step 2: spot price — use Yahoo via proxy (Saxo returns NoAccess for stock quotes) ──
-    const proxyBase=state.saxoProxyUrl?state.saxoProxyUrl.replace(/\/$/,''):'';
+    // ── Step 2: spot price via Yahoo proxy ──
     let spot=state.spot;
     if(proxyBase){
       try{
@@ -1839,60 +1836,35 @@ async function fetchSaxoData(btn,status){
       }catch(e){console.warn('Yahoo proxy spot failed:',e);}
     }
 
-    // ── Step 3: find MSTR option contracts ──
+    // ── Step 3: MSTR options via contractoptionspaces → contractoptions ──
+    // Root: MSTR:xcbf, GroupOptionRootId=2517 (confirmed from OPRA keyword search)
     let optInstruments=[];
-
-    // 3a: get related instruments from the MSTR stock Uic — this links to the option root
-    const rRel=await fetch(
-      `${BASE}/ref/v1/instruments/details?Uics=${uic}&AssetTypes=Stock&FieldGroups=RelatedInstruments`,
-      {headers:H}
-    );
-    const dRel=await rRel.json();
-    console.log('Related instruments:',JSON.stringify(dRel).slice(0,800));
-    const related=dRel.Data?.[0]?.RelatedInstruments||[];
-    const optRoot=related.find(r=>r.AssetType==='StockOption'||r.Type==='StockOption');
-    console.log('Option root from related:',JSON.stringify(optRoot));
-
-    // 3b: MSTR option root is MSTR:xcbf, GroupOptionRootId=2517
-    // Use contractoptionspaces → contractoptions (correct Saxo API for individual strikes)
     const MSTR_ROOT_ID=2517;
     console.log('Fetching option spaces for root',MSTR_ROOT_ID);
-    const rSpaces=await fetch(
-      `${BASE}/ref/v1/instruments/contractoptionspaces?OptionRootId=${MSTR_ROOT_ID}&$top=50`,
-      {headers:H}
-    );
+    const rSpaces=await saxoFetch(`/ref/v1/instruments/contractoptionspaces?OptionRootId=${MSTR_ROOT_ID}&$top=50`);
     const dSpaces=await rSpaces.json();
     console.log('contractoptionspaces:',JSON.stringify(dSpaces).slice(0,600));
     const spaces=dSpaces.Data||dSpaces.OptionSpace||[];
 
     if(spaces.length>0){
-      // Fetch individual contracts for each expiry space (limit to nearest 6 expiries)
-      const near=spaces.slice(0,6);
+      const near=spaces.slice(0,6); // nearest 6 expiries
       for(const sp of near){
         const spaceId=sp.OptionSpaceId||sp.Identifier||sp.Id;
         const expiry=sp.ExpiryDate||sp.Expiry||'';
         if(!spaceId) continue;
-        const rc=await fetch(
-          `${BASE}/ref/v1/instruments/contractoptions?OptionSpaceId=${spaceId}&$top=200`,
-          {headers:H}
-        );
+        const rc=await saxoFetch(`/ref/v1/instruments/contractoptions?OptionSpaceId=${spaceId}&$top=200`);
         const dc=await rc.json();
         if(near.indexOf(sp)===0) console.log(`contractoptions spaceId=${spaceId} (${expiry}):`,JSON.stringify(dc).slice(0,500));
         const contracts=(dc.Data||[]).filter(o=>o.StrikePrice&&o.PutCall);
-        // Attach ExpiryDate from the space if not on the contract
         contracts.forEach(o=>{if(!o.ExpiryDate&&expiry) o.ExpiryDate=expiry;});
         optInstruments.push(...contracts);
       }
       console.log(`contractoptions total: ${optInstruments.length} contracts`);
     } else {
-      // spaces endpoint failed — log what we got and try direct instrument query
-      console.warn('contractoptionspaces returned no data, trying direct query');
-      const rd=await fetch(
-        `${BASE}/ref/v1/instruments?GroupOptionRootId=${MSTR_ROOT_ID}&AssetTypes=StockOption&$top=500`,
-        {headers:H}
-      );
+      console.warn('contractoptionspaces empty, trying GroupOptionRootId direct query');
+      const rd=await saxoFetch(`/ref/v1/instruments?GroupOptionRootId=${MSTR_ROOT_ID}&AssetTypes=StockOption&$top=500`);
       const dd=await rd.json();
-      console.log('Direct GroupOptionRootId query sample:',JSON.stringify((dd.Data||[]).slice(0,2)));
+      console.log('Direct query sample:',JSON.stringify((dd.Data||[]).slice(0,2)));
       optInstruments=(dd.Data||[]).filter(o=>o.ExpiryDate&&o.StrikePrice&&o.PutCall);
     }
 
@@ -1935,12 +1907,9 @@ async function fetchSaxoData(btn,status){
     const priceData=[];
     for(let i=0;i<uics.length;i+=50){
       const batch=uics.slice(i,i+50).join(',');
-      const rp=await fetch(
-        `${BASE}/trade/v1/infoprices/list?Uics=${batch}&AssetType=StockOption&FieldGroups=PriceInfo,DisplayAndFormat,Greeks,Quote`,
-        {headers:H}
-      );
+      const rp=await saxoFetch(`/trade/v1/infoprices/list?Uics=${batch}&AssetType=StockOption&FieldGroups=PriceInfo,DisplayAndFormat,Greeks,Quote`);
       const dp=await rp.json();
-      if(i===0) console.log('Saxo infoprices/list response (batch 0):',JSON.stringify(dp).slice(0,800));
+      if(i===0) console.log('Saxo infoprices/list (batch 0):',JSON.stringify(dp).slice(0,800));
       if(dp.Data) priceData.push(...dp.Data);
     }
     console.log(`Saxo: ${priceData.length} option price records received`);
