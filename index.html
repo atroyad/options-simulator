@@ -1880,28 +1880,34 @@ async function fetchSaxoData(btn,status){
     expiries.sort();
     console.log('Expiry dates to try:',expiries);
 
-    // Step 3b: query CanonicalOptionRootId + ExpiryDate for each expiry
-    for(const exp of expiries){
-      const de=await saxoJson(`/ref/v1/instruments?CanonicalOptionRootId=${MSTR_ROOT_ID}&ExpiryDate=${exp}&AssetTypes=StockOption&$top=200`);
-      if(expiries.indexOf(exp)===0) console.log(`CanonicalOptionRootId=${MSTR_ROOT_ID} exp=${exp}:`,JSON.stringify(de).slice(0,400));
-      if(!de) continue;
-      const contracts=(de.Data||[]).filter(o=>o.StrikePrice&&o.PutCall);
-      contracts.forEach(o=>{if(!o.ExpiryDate) o.ExpiryDate=exp;});
-      optInstruments.push(...contracts);
-    }
-    console.log(`Total contracts from expiry queries: ${optInstruments.length}`);
+    // Step 3b: contractoptionspaces/{OptionRootId} — OptionRootId is a PATH param
+    const dSpaces=await saxoJson(`/ref/v1/instruments/contractoptionspaces/${MSTR_ROOT_ID}`);
+    console.log('contractoptionspaces/2517:',JSON.stringify(dSpaces).slice(0,800));
 
-    // Try to extract contracts — Saxo may encode expiry/strike in the Symbol field
-    // Step 3c: try ref/v1/instruments/optionchain (dedicated Saxo chain endpoint)
-    if(optInstruments.length===0){
-      const dOC=await saxoJson(`/ref/v1/instruments/optionchain?UnderlyingUic=${uic}&AssetType=Stock&$top=5`);
-      console.log('ref/v1/instruments/optionchain:',JSON.stringify(dOC).slice(0,600));
-      if(dOC?.Data?.length>0){
-        const dOCAll=await saxoJson(`/ref/v1/instruments/optionchain?UnderlyingUic=${uic}&AssetType=Stock&$top=500`);
-        optInstruments=(dOCAll?.Data||[]).filter(o=>o.StrikePrice&&o.PutCall&&o.ExpiryDate);
-        console.log(`optionchain contracts: ${optInstruments.length}`);
+    if(dSpaces?.Data?.length>0||dSpaces?.OptionSpace?.length>0){
+      const spaces=dSpaces.Data||dSpaces.OptionSpace||[];
+      console.log(`Got ${spaces.length} spaces, first:`,JSON.stringify(spaces[0]));
+      for(const sp of spaces.slice(0,6)){
+        const spId=sp.OptionSpaceId||sp.Identifier||sp.Id;
+        const exp=sp.ExpiryDate||sp.Expiry||'';
+        if(spId){
+          const dc=await saxoJson(`/ref/v1/instruments/contractoptions?OptionSpaceId=${spId}&$top=200`);
+          if(dc?.Data){
+            dc.Data.forEach(o=>{if(!o.ExpiryDate&&exp) o.ExpiryDate=exp;});
+            optInstruments.push(...dc.Data.filter(o=>o.StrikePrice&&o.PutCall));
+          }
+        }
       }
+      console.log(`Contracts from contractoptionspaces: ${optInstruments.length}`);
     }
+
+    // Step 3c: also try with UnderlyingUic and expiry list from step 3a
+    if(optInstruments.length===0){
+      const dSpaces2=await saxoJson(`/ref/v1/instruments/contractoptionspaces/${MSTR_ROOT_ID}?UnderlyingUic=${uic}`);
+      console.log('contractoptionspaces with UnderlyingUic:',JSON.stringify(dSpaces2).slice(0,600));
+    }
+
+    console.log(`Total contracts: ${optInstruments.length}`);
 
     if(optInstruments.length===0){
       // Saxo OPRA subscription may not include MSTR options — show spot only with clear message
