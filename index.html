@@ -818,6 +818,20 @@ function erf(x){
 const N=x=>0.5*(1+erf(x/Math.SQRT2));
 const npdf=x=>Math.exp(-0.5*x*x)/Math.sqrt(2*Math.PI);
 
+// Back-solve IV from market price using bisection
+function bsIV(px,S,K,T,r,type){
+  const intrinsic=Math.max(0,type==='call'?S-K:K-S);
+  if(px<=intrinsic+0.001) return 0; // deep ITM or bad price
+  let lo=0.01,hi=5,mid=0;
+  for(let i=0;i<60;i++){
+    mid=(lo+hi)/2;
+    const p=bsPrice(S,K,T,r,mid,type);
+    if(Math.abs(p-px)<0.0001) break;
+    if(p<px) lo=mid; else hi=mid;
+  }
+  return mid;
+}
+
 function bsPrice(S,K,T,r,sig,type){
   if(T<=0)return Math.max(0,type==='call'?S-K:K-S);
   const sq=Math.sqrt(T);
@@ -1775,8 +1789,9 @@ async function fetchSaxoData(btn,status){
       {headers:H}
     );
     const d2=await r2.json();
-    const mid=d2.Quote?.Mid||d2.Quote?.Ask||d2.PriceInfo?.LastTraded;
-    if(mid) syncSpot(Math.round(mid*100)/100);
+    console.log('Saxo spot price response:',JSON.stringify(d2).slice(0,500));
+    const mid=d2.Quote?.Mid??d2.Quote?.Ask??d2.Quote?.Bid??d2.PriceInfo?.LastTraded??d2.LastClose;
+    if(mid&&mid>0) syncSpot(Math.round(mid*100)/100);
     const spot=state.spot;
 
     // ── Step 3: get MSTR options list ──
@@ -1821,17 +1836,30 @@ async function fetchSaxoData(btn,status){
     }
 
     // ── Step 5: map to liveOptions format ──
+    // Log first item so we can see the actual data shape from Saxo live
+    if(priceData.length>0) console.log('Saxo option data sample:',JSON.stringify(priceData[0]).slice(0,800));
     state.liveOptions=[];
     for(const p of priceData){
       const inst=optInstruments.find(o=>o.Identifier===p.Uic);
       if(!inst) continue;
-      const iv=p.Greeks?.ImpliedVolatility;
-      if(!iv||iv<=0) continue;
-      const mid=(p.Quote?.Bid+p.Quote?.Ask)/2;
-      const K=inst.StrikePrice||p.DisplayAndFormat?.StrikePrice;
-      const type=inst.PutCall==='Call'?'call':'put';
-      const exp=inst.ExpiryDate?.slice(0,10)||'';
-      state.liveOptions.push({K,iv,type,exp,bid:p.Quote?.Bid||0,ask:p.Quote?.Ask||0,mid});
+
+      const K=inst.StrikePrice??p.DisplayAndFormat?.StrikePrice??p.Greeks?.StrikePrice;
+      if(!K||K<=0) continue;
+      const type=(inst.PutCall||inst.OptionType||'').toLowerCase().includes('put')?'put':'call';
+      const exp=inst.ExpiryDate?.slice(0,10)||inst.Expiry?.slice(0,10)||'';
+      const bid=p.Quote?.Bid||0;
+      const ask=p.Quote?.Ask||0;
+      const mid=(bid+ask)/2||0;
+
+      // Use Saxo Greek IV if available, otherwise back-solve from mid price
+      let iv=p.Greeks?.ImpliedVolatility||p.Greeks?.impliedvolatility||0;
+      if((!iv||iv<=0)&&mid>0&&exp){
+        // Back-solve IV from mid price using Black-Scholes
+        const T=Math.max(0,(new Date(exp)-new Date())/(365*24*3600*1000));
+        if(T>0.003) iv=bsIV(mid,spot,K,T,state.rate,type);
+      }
+      if(!iv||iv<=0||iv>5) continue;
+      state.liveOptions.push({K,iv,type,exp,bid,ask,mid});
     }
 
     // ── Set ATM IV ──
