@@ -1892,32 +1892,16 @@ async function fetchSaxoData(btn,status){
     console.log(`Total contracts from expiry queries: ${optInstruments.length}`);
 
     // Try to extract contracts — Saxo may encode expiry/strike in the Symbol field
-    // e.g. "MSTR 260117C00200000" = MSTR Jan17'26 Call $200
-    const parseSymbol=sym=>{
-      if(!sym) return null;
-      // OCC format: TICKER YYMMDD[C/P]XXXXXXX (strike × 1000)
-      const m=sym.match(/(\w+)\s+(\d{6})([CP])(\d{8})/);
-      if(m){
-        const y='20'+m[2].slice(0,2),mo=m[2].slice(2,4),d=m[2].slice(4,6);
-        return{exp:`${y}-${mo}-${d}`,type:m[3]==='C'?'call':'put',K:parseInt(m[4])/1000};
+    // Step 3c: try ref/v1/instruments/optionchain (dedicated Saxo chain endpoint)
+    if(optInstruments.length===0){
+      const dOC=await saxoJson(`/ref/v1/instruments/optionchain?UnderlyingUic=${uic}&AssetType=Stock&$top=5`);
+      console.log('ref/v1/instruments/optionchain:',JSON.stringify(dOC).slice(0,600));
+      if(dOC?.Data?.length>0){
+        const dOCAll=await saxoJson(`/ref/v1/instruments/optionchain?UnderlyingUic=${uic}&AssetType=Stock&$top=500`);
+        optInstruments=(dOCAll?.Data||[]).filter(o=>o.StrikePrice&&o.PutCall&&o.ExpiryDate);
+        console.log(`optionchain contracts: ${optInstruments.length}`);
       }
-      return null;
-    };
-
-    const allData=dd.Data||[];
-    for(const o of allData){
-      let exp=o.ExpiryDate?.slice(0,10)||'';
-      let K=o.StrikePrice||0;
-      let type=(o.PutCall||'').toLowerCase().includes('put')?'put':
-               (o.PutCall||'').toLowerCase().includes('call')?'call':'';
-      // Fall back to Symbol parsing if fields missing
-      if(!exp||!K||!type){
-        const parsed=parseSymbol(o.Symbol||o.Description||'');
-        if(parsed){exp=parsed.exp;K=parsed.K;type=parsed.type;}
-      }
-      if(exp&&K>0&&type) optInstruments.push({...o,ExpiryDate:exp,StrikePrice:K,PutCall:type==='call'?'Call':'Put',_type:type});
     }
-    console.log(`Parsed ${optInstruments.length} contracts from ${allData.length} items`);
 
     if(optInstruments.length===0){
       // Saxo OPRA subscription may not include MSTR options — show spot only with clear message
