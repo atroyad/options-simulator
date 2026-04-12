@@ -1806,48 +1806,53 @@ async function fetchSaxoData(btn,status){
       }catch(e){console.warn('Yahoo proxy spot failed:',e);}
     }
 
-    // ── Step 3: get MSTR option contracts ──
-    // First try: keyword search for individual contracts (has ExpiryDate + StrikePrice)
+    // ── Step 3: find MSTR option root then expand to individual contracts ──
+    // Saxo OPRA roots use symbol pattern TICKER_US:xcbf
+    // UnderlyingUic=787 is broken in Saxo (points to wrong roots), so search by symbol directly.
     let optInstruments=[];
-    const r3k=await fetch(
-      `${BASE}/ref/v1/instruments?Keywords=MSTR&AssetTypes=StockOption&$top=200`,
+
+    // 3a: find the MSTR option root by symbol
+    const r3root=await fetch(
+      `${BASE}/ref/v1/instruments?Keywords=MSTR_US&AssetTypes=StockOption&$top=50`,
       {headers:H}
     );
-    const d3k=await r3k.json();
-    console.log('Saxo options keyword search sample:',JSON.stringify((d3k.Data||[]).slice(0,2)));
-    // Keep only individual contracts (have ExpiryDate), not roots (SummaryType=ContractOptionRoot)
-    const contracts=( d3k.Data||[]).filter(o=>o.ExpiryDate&&o.StrikePrice&&o.PutCall);
-    if(contracts.length>0){
-      optInstruments=contracts;
-      console.log(`Saxo: ${optInstruments.length} individual contracts via keyword search`);
-    } else {
-      // Fallback: UnderlyingUic search, then expand roots to individual contracts
-      const r3=await fetch(
-        `${BASE}/ref/v1/instruments?UnderlyingUic=${uic}&AssetTypes=StockOption&$top=200`,
+    const d3root=await r3root.json();
+    console.log('MSTR_US root search:',JSON.stringify(d3root.Data||[]));
+    // Find root where symbol starts with MSTR_US and description matches MicroStrategy/Strategy
+    const mstrRoot=(d3root.Data||[]).find(o=>
+      o.Symbol?.startsWith('MSTR_US')&&
+      (o.Description?.includes('MicroStrategy')||o.Description?.includes('Strategy')||o.Symbol==='MSTR_US:xcbf')
+    );
+
+    if(mstrRoot){
+      const rootId=mstrRoot.GroupOptionRootId||mstrRoot.Identifier;
+      console.log('MSTR option root found:',mstrRoot.Symbol,'rootId:',rootId);
+
+      // 3b: expand root → individual contracts (paginate up to 400)
+      const r3e=await fetch(
+        `${BASE}/ref/v1/instruments?OptionRootId=${rootId}&AssetTypes=StockOption&$top=400`,
         {headers:H}
       );
-      const d3=await r3.json();
-      console.log('Saxo UnderlyingUic result sample:',JSON.stringify((d3.Data||[]).slice(0,2)));
-      const roots=(d3.Data||[]).filter(o=>o.SummaryType==='ContractOptionRoot');
-      const directContracts=(d3.Data||[]).filter(o=>o.ExpiryDate&&o.StrikePrice);
-      if(directContracts.length>0){
-        optInstruments=directContracts;
-      } else if(roots.length>0){
-        // Expand first root into individual contracts
-        const rootId=roots[0].Identifier;
-        console.log('Saxo: expanding root',rootId,'to individual contracts…');
-        const r3e=await fetch(
-          `${BASE}/ref/v1/instruments?CanonicalOptionRootId=${rootId}&AssetTypes=StockOption&$top=400`,
+      const d3e=await r3e.json();
+      console.log('Root expansion total:',d3e.Data?.length,'sample:',JSON.stringify((d3e.Data||[]).slice(0,2)));
+      optInstruments=(d3e.Data||[]).filter(o=>o.ExpiryDate&&o.StrikePrice&&o.PutCall);
+
+      if(optInstruments.length===0){
+        // Try alternate param name
+        const r3e2=await fetch(
+          `${BASE}/ref/v1/instruments?GroupOptionRootId=${rootId}&AssetTypes=StockOption&$top=400`,
           {headers:H}
         );
-        const d3e=await r3e.json();
-        console.log('Saxo root expansion sample:',JSON.stringify((d3e.Data||[]).slice(0,2)));
-        optInstruments=(d3e.Data||[]).filter(o=>o.ExpiryDate&&o.StrikePrice&&o.PutCall);
+        const d3e2=await r3e2.json();
+        console.log('GroupOptionRootId expansion:',d3e2.Data?.length,'sample:',JSON.stringify((d3e2.Data||[]).slice(0,2)));
+        optInstruments=(d3e2.Data||[]).filter(o=>o.ExpiryDate&&o.StrikePrice&&o.PutCall);
       }
+    } else {
+      console.warn('MSTR_US root not found — all results:',JSON.stringify(d3root.Data||[]));
     }
 
     if(optInstruments.length===0){
-      status.textContent=`Saxo: $${spot.toFixed(2)} · No option contracts found — check OPRA subscription`;
+      status.textContent=`Saxo: $${spot.toFixed(2)} · MSTR options not found in Saxo (Uic 787 root link broken) — spot only`;
       status.style.color='var(--ylw)';btn.textContent='⟳ Refresh';btn.disabled=false;
       renderAll();return;
     }
