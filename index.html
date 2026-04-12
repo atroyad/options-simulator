@@ -1836,15 +1836,10 @@ async function fetchSaxoData(btn,status){
       }catch(e){console.warn('Yahoo proxy spot failed:',e);}
     }
 
-    // ── Step 3: MSTR options — fetch all contracts via OptionRootId ──
-    // Root: MSTR:xcbf, Identifier=2517 (confirmed from OPRA keyword search)
-    // contractoptionspaces/contractoptions don't exist on live API — use instruments directly.
+    // ── Step 3: MSTR options — fetch individual contracts via root details + expiry dates ──
+    // Root: MSTR:xcbf, Identifier=2517. instruments endpoint only returns roots, not contracts.
+    // Correct approach: get expiry dates from root details, then query per expiry.
     let optInstruments=[];
-    const MSTR_ROOT_ID=2517;
-
-    // MSTR option root: Identifier=2517, Symbol=MSTR:xcbf
-    // Saxo instruments endpoint only returns ContractOptionRoot items, never individual contracts.
-    // Correct approach: get expiry dates from root details, then query per expiry with CanonicalOptionRootId.
     const MSTR_ROOT_ID=2517;
 
     // Step 3a: get root details to discover available expiry dates
