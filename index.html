@@ -1387,7 +1387,8 @@ function setMode(m){
   document.getElementById('liveBtn').style.display=isLive?'':'none';
   document.getElementById('liveStatus').style.display=isLive?'':'none';
   updateSaxoUI();
-  if(isLive) fetchLiveData();
+  // Don't auto-fetch if Saxo live — user must login first
+  if(isLive&&!(state.liveSource==='saxo'&&state.saxoEnv==='live'&&!state.saxoToken)) fetchLiveData();
 }
 
 function setLiveSource(src){
@@ -1790,61 +1791,70 @@ async function fetchSaxoData(btn,status){
       return;
     }
     const uic=mstr.Identifier;
+    console.log('Saxo MSTR Uic:',uic,'Symbol:',mstr.Symbol,'Desc:',mstr.Description);
 
-    // ── Step 2: get MSTR spot price ──
-    // Try infoprices first; fall back to instrument LastClose if NoAccess
-    const r2=await fetch(
-      `${BASE}/trade/v1/infoprices?Uic=${uic}&AssetType=Stock&FieldGroups=PriceInfo,Quote`,
-      {headers:H}
-    );
-    const d2=await r2.json();
-    console.log('Saxo spot price response:',JSON.stringify(d2).slice(0,500));
-    let mid=d2.Quote?.Mid??d2.Quote?.Ask??d2.Quote?.Bid??d2.PriceInfo?.LastTraded;
-    // If NoAccess on live quotes, fall back to instrument reference price
-    if((!mid||mid<=0)&&(d2.Quote?.PriceTypeBid==='NoAccess'||d2.Quote?.PriceTypeAsk==='NoAccess')){
-      // Try instrument details which include LastClose
-      const r2b=await fetch(
-        `${BASE}/ref/v1/instruments/details?Uics=${uic}&AssetTypes=Stock&FieldGroups=OrderSetting,TradingConditions`,
-        {headers:H}
-      );
-      const d2b=await r2b.json();
-      console.log('Saxo instrument details:',JSON.stringify(d2b).slice(0,500));
-      mid=d2b.Data?.[0]?.LastClose??d2b.Data?.[0]?.PreviousClose;
-    }
-    if(mid&&mid>0) syncSpot(Math.round(mid*100)/100);
-    const spot=state.spot;
-
-    // ── Step 3: get MSTR options list ──
-    const r3=await fetch(
-      `${BASE}/ref/v1/instruments?UnderlyingUic=${uic}&AssetTypes=StockOption&$top=200`,
-      {headers:H}
-    );
-    const d3=await r3.json();
-    console.log('Saxo options query response:',d3);
-    let optInstruments=d3.Data||[];
-
-    // Fallback: search by keyword if UnderlyingUic returns nothing
-    if(optInstruments.length===0){
-      const r3b=await fetch(
-        `${BASE}/ref/v1/instruments?Keywords=MSTR&AssetTypes=StockOption&$top=200`,
-        {headers:H}
-      );
-      const d3b=await r3b.json();
-      console.log('Saxo options keyword fallback:',d3b);
-      optInstruments=d3b.Data||[];
+    // ── Step 2: spot price — use Yahoo via proxy (Saxo returns NoAccess for stock quotes) ──
+    const proxyBase=state.saxoProxyUrl?state.saxoProxyUrl.replace(/\/$/,''):'';
+    let spot=state.spot;
+    if(proxyBase){
+      try{
+        const yr=await fetch(`${proxyBase}/yahoo?ticker=MSTR`,{cache:'no-cache'});
+        const yd=await yr.json();
+        const yspot=yd.chart?.result?.[0]?.meta?.regularMarketPrice;
+        if(yspot&&yspot>0){syncSpot(Math.round(yspot*100)/100);spot=state.spot;}
+        console.log('Yahoo spot via proxy:',yspot);
+      }catch(e){console.warn('Yahoo proxy spot failed:',e);}
     }
 
+    // ── Step 3: get MSTR option contracts ──
+    // First try: keyword search for individual contracts (has ExpiryDate + StrikePrice)
+    let optInstruments=[];
+    const r3k=await fetch(
+      `${BASE}/ref/v1/instruments?Keywords=MSTR&AssetTypes=StockOption&$top=200`,
+      {headers:H}
+    );
+    const d3k=await r3k.json();
+    console.log('Saxo options keyword search sample:',JSON.stringify((d3k.Data||[]).slice(0,2)));
+    // Keep only individual contracts (have ExpiryDate), not roots (SummaryType=ContractOptionRoot)
+    const contracts=( d3k.Data||[]).filter(o=>o.ExpiryDate&&o.StrikePrice&&o.PutCall);
+    if(contracts.length>0){
+      optInstruments=contracts;
+      console.log(`Saxo: ${optInstruments.length} individual contracts via keyword search`);
+    } else {
+      // Fallback: UnderlyingUic search, then expand roots to individual contracts
+      const r3=await fetch(
+        `${BASE}/ref/v1/instruments?UnderlyingUic=${uic}&AssetTypes=StockOption&$top=200`,
+        {headers:H}
+      );
+      const d3=await r3.json();
+      console.log('Saxo UnderlyingUic result sample:',JSON.stringify((d3.Data||[]).slice(0,2)));
+      const roots=(d3.Data||[]).filter(o=>o.SummaryType==='ContractOptionRoot');
+      const directContracts=(d3.Data||[]).filter(o=>o.ExpiryDate&&o.StrikePrice);
+      if(directContracts.length>0){
+        optInstruments=directContracts;
+      } else if(roots.length>0){
+        // Expand first root into individual contracts
+        const rootId=roots[0].Identifier;
+        console.log('Saxo: expanding root',rootId,'to individual contracts…');
+        const r3e=await fetch(
+          `${BASE}/ref/v1/instruments?CanonicalOptionRootId=${rootId}&AssetTypes=StockOption&$top=400`,
+          {headers:H}
+        );
+        const d3e=await r3e.json();
+        console.log('Saxo root expansion sample:',JSON.stringify((d3e.Data||[]).slice(0,2)));
+        optInstruments=(d3e.Data||[]).filter(o=>o.ExpiryDate&&o.StrikePrice&&o.PutCall);
+      }
+    }
+
     if(optInstruments.length===0){
-      // SIM environment often lacks options data — spot is still useful
-      status.textContent=`Saxo: $${spot.toFixed(2)} · Options not available in SIM (spot only) — switch to Live for OPRA data`;
+      status.textContent=`Saxo: $${spot.toFixed(2)} · No option contracts found — check OPRA subscription`;
       status.style.color='var(--ylw)';btn.textContent='⟳ Refresh';btn.disabled=false;
       renderAll();return;
     }
 
-    // ── Step 4: get prices for all option instruments ──
-    // Batch in groups of 50 (Saxo limit)
-    console.log(`Saxo: ${optInstruments.length} option instruments found, fetching prices…`);
-    console.log('Saxo option instrument sample:',JSON.stringify(optInstruments[0]).slice(0,500));
+    // ── Step 4: get prices for all option contracts ──
+    console.log(`Saxo: ${optInstruments.length} contracts, fetching prices…`);
+    console.log('Contract sample:',JSON.stringify(optInstruments[0]).slice(0,400));
     const uics=optInstruments.map(o=>o.Identifier);
     const priceData=[];
     for(let i=0;i<uics.length;i+=50){
