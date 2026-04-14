@@ -2964,22 +2964,17 @@ function renderHeatmap(){
     const days=maxDays*(1-r/(ROWS-1));
     for(let c=0;c<COLS;c++){
       const spot=lo+(hi-lo)*c/(COLS-1);
+      // baseArr always = constant-IV P&L (drives heatmap colors)
       let pnl=0;
       for(const l of legK){
         const rem=Math.max(0,l.Tnow_days-(maxDays-days))/365;
-        let iv;
-        if(state.hmVolCorr){
-          const ab=volAdjIV(spot,state.iv);
-          iv=state.ivSurface==='smile'?smileIV(l.K,spot,ab):ab;
-        } else {
-          iv=state.ivSurface==='smile'?smileIV(l.K,spot,state.iv):state.iv;
-        }
+        const iv=state.ivSurface==='smile'?smileIV(l.K,spot,state.iv):state.iv;
         pnl+=l.sign*(bsPrice(spot,l.K,rem,state.rate,iv,l.type)-l.ep)*l.qty*100;
       }
       const idx=r*COLS+c;
       baseArr[idx]=pnl;
       if(pnl<minP)minP=pnl;if(pnl>maxP)maxP=pnl;
-      // Compute corr P&L in same pass to avoid second full loop
+      // corrArr = vol-adjusted P&L (overlay shows diff vs constant-IV)
       if(corrArr){
         let cpnl=0;
         for(const l of legK){
