@@ -2441,59 +2441,67 @@ function resetChartZoom(){
 // ── Axis-drag-to-scale ─────────────────────────────────
 // Dragging on the Y-axis area scales Y only; dragging on
 // the X-axis area scales X only; body drags remain pans.
+// chartArea coordinates are CSS (logical) pixels — never
+// multiply by devicePixelRatio here.
 let _axisDrag=null;
+let _axisDragSetup=false; // guard: only add window listeners once
 function setupAxisDrag(){
   const canvas=document.getElementById('pnlChart');
   if(!canvas) return;
 
-  canvas.addEventListener('mousedown',e=>{
+  // Canvas-level mousedown: swap in a fresh listener each render.
+  // Store ref so we can remove the old one before adding the new one.
+  if(canvas._axisDragDown) canvas.removeEventListener('mousedown',canvas._axisDragDown,{capture:true});
+  canvas._axisDragDown=e=>{
     if(!chart||e.button!==0) return;
     const rect=canvas.getBoundingClientRect();
-    const x=(e.clientX-rect.left)*(canvas.width/rect.width);
-    const y=(e.clientY-rect.top)*(canvas.height/rect.height);
+    // Use CSS (logical) pixel offsets — chartArea values are in CSS px.
+    const x=e.clientX-rect.left;
+    const y=e.clientY-rect.top;
     const ca=chart.chartArea;
     let axis=null;
     if(x<ca.left && y>=ca.top && y<=ca.bottom) axis='y';
     else if(y>ca.bottom && x>=ca.left && x<=ca.right) axis='x';
     if(!axis) return;
-    // Prevent the zoom plugin from also starting a pan
+    // Stop the zoom plugin's pan from also firing for this mousedown.
     e.preventDefault();
     e.stopPropagation();
-    chart.options.plugins.zoom.pan.enabled=false;
-    chart.update('none');
-    // Anchor = data value under the cursor → stays fixed while scaling
+    // Anchor = data value under the cursor; stays fixed while scaling.
     const sc=chart.scales[axis];
     const anchor=sc.getValueForPixel(axis==='y'?y:x);
     _axisDrag={axis,startX:x,startY:y,anchor,origMin:sc.min,origMax:sc.max};
-  },{capture:true});
+  };
+  canvas.addEventListener('mousedown',canvas._axisDragDown,{capture:true});
 
-  window.addEventListener('mousemove',e=>{
-    if(!_axisDrag||!chart) return;
-    const canvas=document.getElementById('pnlChart');
-    const rect=canvas.getBoundingClientRect();
-    const x=(e.clientX-rect.left)*(canvas.width/rect.width);
-    const y=(e.clientY-rect.top)*(canvas.height/rect.height);
-    const {axis,startX,startY,anchor,origMin,origMax}=_axisDrag;
-    // dy<0 = drag up = zoom out; dy>0 = drag down = zoom in
-    // dx>0 = drag right = zoom out; dx<0 = drag left = zoom in
-    const delta= axis==='y' ? startY-y : x-startX;
-    const factor=Math.exp(-delta*0.006); // >1 = expand, <1 = compress
-    const newMin=anchor-(anchor-origMin)*factor;
-    const newMax=anchor+(origMax-anchor)*factor;
-    chart.scales[axis].options.min=newMin;
-    chart.scales[axis].options.max=newMax;
-    chart.update('none');
-    if(axis==='x') syncChartRange();
-  });
+  // Window-level move/up: add only once across all renderChart() calls.
+  if(!_axisDragSetup){
+    _axisDragSetup=true;
 
-  window.addEventListener('mouseup',()=>{
-    if(!_axisDrag) return;
-    _axisDrag=null;
-    if(chart){
-      chart.options.plugins.zoom.pan.enabled=true;
+    window.addEventListener('mousemove',e=>{
+      if(!_axisDrag||!chart) return;
+      const cv=document.getElementById('pnlChart');
+      const rect=cv.getBoundingClientRect();
+      const x=e.clientX-rect.left; // CSS px
+      const y=e.clientY-rect.top;
+      const {axis,startX,startY,anchor,origMin,origMax}=_axisDrag;
+      // dy<0 = drag up = expand; dy>0 = drag down = compress
+      // dx>0 = drag right = expand; dx<0 = drag left = compress
+      const delta=axis==='y'?startY-y:x-startX;
+      const factor=Math.exp(-delta*0.006);
+      const newMin=anchor-(anchor-origMin)*factor;
+      const newMax=anchor+(origMax-anchor)*factor;
+      if(newMax<=newMin) return; // guard against inverted range
+      chart.scales[axis].options.min=newMin;
+      chart.scales[axis].options.max=newMax;
       chart.update('none');
-    }
-  });
+      if(axis==='x') syncChartRange();
+    });
+
+    window.addEventListener('mouseup',()=>{
+      if(!_axisDrag) return;
+      _axisDrag=null;
+    });
+  }
 }
 
 function buildDatasets(sp){
