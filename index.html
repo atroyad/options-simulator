@@ -284,6 +284,7 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
       </div>
     </div>
     <button class="btn" id="liveBtn" style="display:none;font-size:10px" onclick="fetchLiveData()">⟳ Fetch MSTR</button>
+    <button class="btn" id="exportBtn" style="display:none;font-size:10px;background:var(--sur2);border:1px solid var(--bdr)" onclick="exportOptionsData()">⬇ Export for AI</button>
     <span id="liveStatus" style="font-size:9px;color:var(--mut);display:none"></span>
   </div>
   <div class="badge" id="modeBadge">Simulation</div>
@@ -1655,6 +1656,7 @@ function setMode(m){
   document.getElementById('modeBadge').style.background=isLive?'var(--grn)':'var(--blu)';
   document.getElementById('liveSrcRow').style.display=isLive?'flex':'none';
   document.getElementById('liveBtn').style.display=isLive?'':'none';
+  document.getElementById('exportBtn').style.display=isLive?'':'none';
   document.getElementById('liveStatus').style.display=isLive?'':'none';
   updateSaxoUI();
   if(!isLive){ setLiveLock(false); stopLiveTimer(); }
@@ -1995,6 +1997,48 @@ async function fetchLiveData(){
 // Alternatively register an app at developer.saxo.com with your brokerage
 // account for persistent OAuth — this tool only needs "read" scopes.
 // ═══════════════════════════════════════════════════════
+
+function exportOptionsData(){
+  if(!state.liveOptions||state.liveOptions.length===0){
+    alert('No live options loaded. Fetch data first.');return;
+  }
+  // Group by expiry so the user can choose a subset or export all
+  const expiries=[...new Set(state.liveOptions.map(o=>o.exp))].sort();
+  const byExp={};
+  for(const exp of expiries){
+    const opts=state.liveOptions.filter(o=>o.exp===exp);
+    byExp[exp]={
+      calls:opts.filter(o=>o.type==='call').map(o=>({K:o.K,bid:o.bid,ask:o.ask,mid:+(((o.bid+o.ask)/2).toFixed(2)),iv:+(o.iv*100).toFixed(1)})).sort((a,b)=>a.K-b.K),
+      puts: opts.filter(o=>o.type==='put') .map(o=>({K:o.K,bid:o.bid,ask:o.ask,mid:+(((o.bid+o.ask)/2).toFixed(2)),iv:+(o.iv*100).toFixed(1)})).sort((a,b)=>a.K-b.K),
+    };
+  }
+  const payload={
+    ticker:'MSTR',
+    asOf:new Date().toISOString().slice(0,16).replace('T',' ')+' UTC',
+    source:state.liveSource,
+    spot:+state.spot.toFixed(2),
+    atmIV_pct:Math.round(state.iv*100),
+    smileParams:{skew:state.smileSkew,conv:state.smileConv},
+    riskFreeRate_pct:+(state.rate*100).toFixed(2),
+    expiries,
+    chain:byExp,
+  };
+  const json=JSON.stringify(payload,null,2);
+
+  // ── Download as .json file ──
+  const blob=new Blob([json],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=`MSTR_options_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  // ── Also copy to clipboard with a short summary header ──
+  const header=`MSTR options snapshot — spot $${payload.spot}, ATM IV ${payload.atmIV_pct}%, ${payload.expiries.length} expiries, as of ${payload.asOf}\n\n`;
+  navigator.clipboard?.writeText(header+json).catch(()=>{});
+}
+
 function fitSmileAndFinish(spot,status,btn,note=''){
   // Set ATM IV from live options — prefer ATM calls, fall back to all options
   const validOpts=state.liveOptions.filter(o=>o.iv>0.05&&o.iv<5);
