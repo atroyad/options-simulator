@@ -46,19 +46,33 @@ header p{font-size:10px;color:var(--mut);}
 .rz-h::after{left:0;right:0;top:-4px;bottom:-4px;}
 .rz:hover,.rz.dragging{background:var(--blu);}
 
-/* ── MAIN ── */
-#main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;padding:6px;gap:0;}
-#midRow{flex:1;min-height:0;display:flex;overflow:hidden;margin:4px 0;}
+/* ── CENTER ── */
+#center{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;}
+#pane1,#pane2{display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+#pane1{flex:1;}
+#pane2{flex:1;}
+.pane-bar{height:28px;display:flex;align-items:center;padding:0 6px;gap:2px;
+  background:var(--sur2);border-bottom:1px solid var(--bdr);flex-shrink:0;overflow:hidden;}
+.pnav-btn{padding:2px 9px;border:none;border-bottom:2px solid transparent;
+  background:transparent;color:var(--mut);font-size:10px;cursor:pointer;font-weight:500;white-space:nowrap;}
+.pnav-btn:hover{color:var(--txt);}
+.pnav-btn.on{color:var(--blu);border-bottom-color:var(--blu);font-weight:700;}
+#pane1Body,#pane2Body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;padding:4px;}
+.view-card{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
+
+/* view cards: reuse .card styles but fill pane */
 #chartCard{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;}
 #chartCard .bd{flex:1;min-height:0;display:flex;flex-direction:column;padding:6px 8px;}
 .chart-wrap{flex:1;position:relative;min-height:0;}
-#builderCard{width:320px;min-width:180px;max-width:700px;flex-shrink:0;
-  display:flex;flex-direction:column;overflow:hidden;}
-#builderCard .bd{flex:1;overflow-y:auto;padding:6px 8px;}
-#hmCard{flex-shrink:0;height:140px;min-height:70px;
-  display:flex;flex-direction:column;overflow:hidden;}
+#hmCard{flex:1;min-height:70px;display:flex;flex-direction:column;overflow:hidden;}
 #hmCard .bd{flex:1;min-height:0;display:flex;flex-direction:column;gap:3px;padding:5px 8px;}
 #heatmapCanvas{display:block;cursor:crosshair;width:100%;flex:1;min-height:0;}
+#greeksCard{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
+
+/* ── RIGHT SIDEBAR ── */
+#rightSidebar{width:300px;min-width:190px;max-width:520px;flex-shrink:0;
+  background:var(--sur);border-left:1px solid var(--bdr);
+  overflow:hidden;display:flex;flex-direction:column;}
 
 /* ── CARDS ── */
 .card{background:var(--sur);border:1px solid var(--bdr);border-radius:6px;overflow:hidden;}
@@ -199,17 +213,22 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
 .rs-label{font-size:8px;color:var(--mut);text-transform:uppercase;letter-spacing:.3px;}
 .rs-val{font-size:12px;font-weight:700;font-family:monospace;margin-top:1px;}
 
-@media(max-width:1023px){
-  .app{flex-direction:column;height:auto;overflow:visible;}
-  #sidebar{width:100%!important;max-width:none;border-right:none;border-bottom:1px solid var(--bdr);}
-  #main{padding:8px;gap:8px;}
-  #midRow{flex-direction:column;height:auto;margin:0;}
-  #chartCard{height:300px;flex-shrink:0;}
-  #builderCard{width:100%!important;max-width:none;height:250px;flex-shrink:0;}
-  #hmCard{height:200px!important;}
-  .rz{display:none;}
+@media(max-width:1199px){
+  .app{flex-direction:column;height:auto;overflow-y:auto;overflow-x:hidden;}
+  #sidebar,#rightSidebar{width:100%!important;max-width:none;border-right:none;border-left:none;}
+  #sidebar{border-bottom:1px solid var(--bdr);}
+  #rightSidebar{border-top:1px solid var(--bdr);height:auto;min-height:320px;}
+  #center{height:70vh;min-height:400px;}
+  #pane2{display:none!important;}
+  #rzSplit{display:none!important;}
+  .rz-v{display:none;}
   .presets{flex-wrap:wrap;}
-  .pc{max-width:none;flex:1 1 calc(33% - 4px);}
+  .pc{max-width:none;flex:1 1 calc(50% - 4px);}
+}
+@media(max-width:700px){
+  .pc{flex:1 1 100%;}
+  header h1{font-size:12px;}
+  .pnav-btn{font-size:9px;padding:2px 6px;}
 }
 </style>
 </head>
@@ -515,53 +534,21 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
 
 <div class="rz rz-v" id="rz-sb"></div>
 
-<!-- ══ MAIN ═════════════════════════════════════════════════ -->
-<div id="main">
+<!-- ══ CENTER ══════════════════════════════════════════════ -->
+<div id="center">
 
-  <!-- Presets strip -->
-  <div class="card" id="presetsRow">
-    <div class="hd">
-      <h3>Income Strategy Presets</h3>
-      <button class="btn" onclick="state.legs=[];state.nid=1;renderAll()">Clear</button>
+  <!-- Pane 1 -->
+  <div id="pane1">
+    <div class="pane-bar">
+      <button class="pnav-btn on" id="p1pnl"     onclick="setCenterView(1,'pnl')">P&amp;L / Smile</button>
+      <button class="pnav-btn"    id="p1heatmap" onclick="setCenterView(1,'heatmap')">Heatmap</button>
+      <button class="pnav-btn"    id="p1greeks"  onclick="setCenterView(1,'greeks')">Greeks</button>
+      <button class="btn" id="splitBtn" onclick="toggleSplit()" style="margin-left:auto;font-size:9px;padding:1px 7px">⊞ Split</button>
     </div>
-    <div class="bd" style="padding:5px 7px">
-      <div class="presets">
-        <div class="pc" onclick="loadPreset('cc_monthly')">
-          <h4>Monthly CC ×7</h4>
-          <p>Sell 7 covered calls · 30 DTE · ~Δ0.20</p>
-        </div>
-        <div class="pc" onclick="loadPreset('cc_weekly')">
-          <h4>Weekly CC ×7</h4>
-          <p>Sell 7 covered calls · 7 DTE · faster theta</p>
-        </div>
-        <div class="pc" onclick="loadPreset('csp')">
-          <h4>Cash-Secured Put</h4>
-          <p>Sell put below spot · accumulate + income</p>
-        </div>
-        <div class="pc" onclick="loadPreset('strangle')">
-          <h4>Strangle</h4>
-          <p>Sell OTM call + OTM put · premium both sides</p>
-        </div>
-        <div class="pc" onclick="loadPreset('condor')">
-          <h4>Iron Condor</h4>
-          <p>Sell strangle · buy wings · defined risk</p>
-        </div>
-        <div class="pc" onclick="loadPreset('wheel')" style="border-color:var(--blu)">
-          <h4 style="color:var(--blu)">Wheel ★</h4>
-          <p>CSP to accumulate + CC for income</p>
-        </div>
-        <div class="pc" onclick="loadPreset('leap')" style="border-color:var(--pur)">
-          <h4 style="color:var(--pur)">LEAP Call</h4>
-          <p>Buy Jan 2028 ATM call · leveraged upside</p>
-        </div>
-      </div>
-    </div>
-  </div>
+    <div id="pane1Body">
 
-  <!-- Mid row: chart + builder -->
-  <div id="midRow">
-
-    <div class="card" id="chartCard">
+    <!-- ── P&L / SMILE CARD ── -->
+    <div class="card view-card" id="chartCard">
       <div class="hd" style="height:auto;padding:4px 8px;flex-wrap:wrap;gap:4px">
         <!-- Chart view selector -->
         <div style="display:flex;gap:2px;flex-shrink:0;border:1px solid var(--bdr);border-radius:4px;overflow:hidden">
@@ -632,82 +619,129 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
         </div>
         <div class="chart-wrap"><canvas id="pnlChart"></canvas></div>
       </div>
+    </div><!-- /chartCard -->
+
+    <!-- ── HEATMAP CARD ── -->
+    <div class="card view-card" id="hmCard" style="display:none">
+      <div class="hd">
+        <h3 id="hmTitle">Options P&amp;L Heatmap — Spot × Time (Constant IV)</h3>
+        <span id="hmTip" style="font-size:9px;color:var(--mut);font-family:monospace"></span>
+      </div>
+      <div class="bd">
+        <canvas id="heatmapCanvas"></canvas>
+        <div class="hm-leg">
+          <span>■ <span style="color:var(--grn)">Max profit</span></span>
+          <span>■ <span style="color:#333">Breakeven</span></span>
+          <span>■ <span style="color:var(--red)">Max loss</span></span>
+          <span style="color:var(--mut)">· White = breakeven · Dashed = spot · Legend = $ scale</span>
+        </div>
+      </div>
+    </div><!-- /hmCard -->
+
+    <!-- ── GREEKS CARD ── -->
+    <div class="card view-card" id="greeksCard" style="display:none">
+      <div class="hd" style="height:auto;padding:4px 8px;gap:6px;flex-wrap:wrap">
+        <h3>Greeks vs Spot Price</h3>
+        <span style="font-size:9px;color:var(--mut)">Expiry:</span>
+        <select id="greeksExpiry" style="font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 4px" onchange="renderGreeksDashboard()">
+          <option value="all">All / Portfolio</option>
+        </select>
+        <div style="display:flex;gap:2px;margin-left:4px">
+          <button id="gfAll"  class="lev-btn on" onclick="setGreeksFilter('all')"  style="font-size:9px;padding:2px 7px">All</button>
+          <button id="gfCall" class="lev-btn"    onclick="setGreeksFilter('call')" style="font-size:9px;padding:2px 7px">Calls</button>
+          <button id="gfPut"  class="lev-btn"    onclick="setGreeksFilter('put')"  style="font-size:9px;padding:2px 7px">Puts</button>
+        </div>
+        <span style="font-size:9px;color:var(--mut);margin-left:auto">Per-contract × 100 shares</span>
+      </div>
+      <div class="bd" style="padding:6px 8px;flex:1;min-height:0">
+        <div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:6px;height:100%">
+          <div style="position:relative"><canvas id="gDeltaChart"></canvas></div>
+          <div style="position:relative"><canvas id="gGammaChart"></canvas></div>
+          <div style="position:relative"><canvas id="gThetaChart"></canvas></div>
+          <div style="position:relative"><canvas id="gVegaChart"></canvas></div>
+        </div>
+      </div>
+    </div><!-- /greeksCard -->
+
+    </div><!-- /pane1Body -->
+  </div><!-- /pane1 -->
+
+  <!-- Split drag handle -->
+  <div class="rz rz-h" id="rzSplit" style="display:none"></div>
+
+  <!-- Pane 2 -->
+  <div id="pane2" style="display:none;flex-direction:column;min-height:0;overflow:hidden">
+    <div class="pane-bar">
+      <button class="pnav-btn" id="p2pnl"     onclick="setCenterView(2,'pnl')">P&amp;L / Smile</button>
+      <button class="pnav-btn on" id="p2heatmap" onclick="setCenterView(2,'heatmap')">Heatmap</button>
+      <button class="pnav-btn" id="p2greeks"  onclick="setCenterView(2,'greeks')">Greeks</button>
+      <button class="btn" onclick="toggleSplit()" style="margin-left:auto;font-size:9px;padding:1px 7px">✕ Unsplit</button>
+    </div>
+    <div id="pane2Body" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;padding:4px">
+    </div>
+  </div><!-- /pane2 -->
+
+</div><!-- /center -->
+
+<div class="rz rz-v" id="rz-right"></div>
+
+<!-- ══ RIGHT SIDEBAR ═══════════════════════════════════════ -->
+<aside id="rightSidebar">
+  <div class="sb-tabs">
+    <button class="sb-tab on" data-tab="strategy" onclick="rsTab(this)">Strategy</button>
+    <button class="sb-tab"    data-tab="prices"   onclick="rsTab(this)">Prices</button>
+    <button class="sb-tab"    data-tab="leap"     onclick="rsTab(this)">LEAP</button>
+  </div>
+
+  <!-- ══ TAB: STRATEGY ══ -->
+  <div class="sb-pane" id="rsStrategy">
+
+    <!-- Presets -->
+    <div class="card">
+      <div class="hd">
+        <h3>Strategy Presets</h3>
+        <button class="btn" onclick="state.legs=[];state.nid=1;renderAll()">Clear</button>
+      </div>
+      <div class="bd" style="padding:5px 7px">
+        <div class="presets" style="flex-wrap:wrap">
+          <div class="pc" onclick="loadPreset('cc_monthly')" style="min-width:120px">
+            <h4>Monthly CC</h4>
+            <p>Sell 1 covered call · 30 DTE · ~Δ0.20</p>
+          </div>
+          <div class="pc" onclick="loadPreset('cc_weekly')" style="min-width:120px">
+            <h4>Weekly CC</h4>
+            <p>Sell 1 covered call · 7 DTE · faster theta</p>
+          </div>
+          <div class="pc" onclick="loadPreset('csp')" style="min-width:120px">
+            <h4>Cash-Secured Put</h4>
+            <p>Sell 1 put below spot · Δ0.25</p>
+          </div>
+          <div class="pc" onclick="loadPreset('strangle')" style="min-width:120px">
+            <h4>Strangle</h4>
+            <p>Sell 1 OTM call + 1 OTM put · Δ0.20</p>
+          </div>
+          <div class="pc" onclick="loadPreset('condor')" style="min-width:120px">
+            <h4>Iron Condor</h4>
+            <p>Sell strangle · buy wings · defined risk</p>
+          </div>
+          <div class="pc" onclick="loadPreset('wheel')" style="border-color:var(--blu);min-width:120px">
+            <h4 style="color:var(--blu)">Wheel ★</h4>
+            <p>1 CSP to accumulate · 1 CC for income</p>
+          </div>
+          <div class="pc" onclick="loadPreset('leap')" style="border-color:var(--pur);min-width:120px">
+            <h4 style="color:var(--pur)">LEAP Call</h4>
+            <p>Buy 1 Jan 2028 ATM call · leveraged upside</p>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div class="rz rz-v" id="rz-mid"></div>
-
-    <div class="card" id="builderCard">
+    <!-- Builder -->
+    <div class="card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:200px">
       <div class="hd" style="height:auto;flex-wrap:wrap;gap:0;padding:0 8px 0 0">
-        <div style="display:flex;gap:0;border-bottom:0">
-          <button class="tab-btn on" data-tab="builder" onclick="switchBuilderTab(this)">Strategy Builder</button>
-          <button class="tab-btn" data-tab="prices" onclick="switchBuilderTab(this)">Option Prices</button>
-          <button class="tab-btn" data-tab="leap" onclick="switchBuilderTab(this)">LEAP Strike Scanner</button>
-        </div>
+        <h3 style="padding-left:8px">Strategy Builder</h3>
         <button class="btn btnp" id="addLegBtn" onclick="toggleForm()" style="margin-left:auto">+ Add Leg</button>
       </div>
-
-      <!-- ── OPTION PRICES TAB ── -->
-      <div id="pricesContent" style="display:none;flex-direction:column;flex:1;min-height:0;overflow:hidden">
-        <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-bottom:1px solid var(--bdr);flex-shrink:0;flex-wrap:wrap">
-          <span style="font-size:9px;color:var(--mut)">Filter:</span>
-          <div style="display:flex;gap:2px">
-            <button id="pcAll"  class="lev-btn on" onclick="setPriceFilter('all')"  style="font-size:9px;padding:2px 7px">All</button>
-            <button id="pcCall" class="lev-btn"    onclick="setPriceFilter('call')" style="font-size:9px;padding:2px 7px">Calls</button>
-            <button id="pcPut"  class="lev-btn"    onclick="setPriceFilter('put')"  style="font-size:9px;padding:2px 7px">Puts</button>
-          </div>
-          <span style="font-size:9px;color:var(--mut)">Expiry:</span>
-          <select id="pcExpiry" onchange="renderPricesTable()" style="font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 3px">
-            <option value="all">All expiries</option>
-          </select>
-          <span id="pcLiveNote" style="font-size:9px;color:var(--ylw);margin-left:auto"></span>
-        </div>
-        <div style="flex:1;overflow:auto;min-height:0">
-          <table id="pricesTable" style="width:100%;border-collapse:collapse;font-size:9px;font-family:monospace">
-            <thead style="position:sticky;top:0;background:var(--sur2);z-index:1">
-              <tr>
-                <th style="padding:3px 5px;text-align:left;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Type</th>
-                <th style="padding:3px 5px;text-align:left;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Expiry</th>
-                <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Strike</th>
-                <th style="padding:3px 5px;text-align:right;color:var(--grn);font-weight:600;border-bottom:1px solid var(--bdr)">Bid</th>
-                <th style="padding:3px 5px;text-align:right;color:var(--red);font-weight:600;border-bottom:1px solid var(--bdr)">Ask</th>
-                <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Mid</th>
-                <th style="padding:3px 5px;text-align:right;color:var(--blu);font-weight:600;border-bottom:1px solid var(--bdr)">IV%</th>
-                <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Δ</th>
-                <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Θ/day</th>
-                <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Vega</th>
-                <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">MoM%</th>
-                <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)"></th>
-              </tr>
-            </thead>
-            <tbody id="pricesBody">
-              <tr><td colspan="12" style="padding:12px;text-align:center;color:var(--mut)">Load live data to see option prices</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- ── LEAP SCANNER TAB ── -->
-      <div id="leapContent" style="display:none;flex:1;min-height:0;overflow:hidden;display:none;flex-direction:column">
-        <div style="padding:6px 8px;border-bottom:1px solid var(--bdr);display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;flex-shrink:0">
-          <div>
-            <label class="lbl" style="margin-top:0">Expiry Date</label>
-            <input type="date" id="leapExp" value="2028-01-17" onchange="renderLeapScanner()" style="width:130px">
-          </div>
-          <div>
-            <label class="lbl" style="margin-top:0">Contracts</label>
-            <input type="number" id="leapQty" value="1" step="1" min="1" style="width:55px" onchange="renderLeapScanner()">
-          </div>
-          <div style="font-size:9px;color:var(--mut);line-height:1.5;max-width:220px">
-            Edit <strong style="color:var(--ylw)">Bid $</strong> to enter real market prices.
-            <strong style="color:var(--grn)">Leverage</strong> shows exposure per dollar — peak zone is ATM ±15%.
-          </div>
-        </div>
-        <div style="flex:1;overflow:auto;padding:4px 8px">
-          <div id="leapScannerWrap"><div class="empty">Adjust spot &amp; IV in sidebar to update.</div></div>
-        </div>
-      </div>
-
-      <!-- ── BUILDER TAB ── -->
       <div id="builderContent" class="bd" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
         <div id="addForm" class="af" style="display:none">
           <div>
@@ -745,58 +779,80 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
           </div>
         </div>
         <div class="ts-wrap">
-          <div id="legsWrap"><div class="empty">Load a preset or add a leg to begin.</div></div>
+          <div id="legsWrap"><div class="empty">Choose a preset or add a leg to begin.</div></div>
         </div>
-      </div><!-- /builderContent -->
-    </div><!-- /builderCard -->
-
-  </div><!-- /midRow -->
-
-  <div class="rz rz-h" id="rz-hm"></div>
-
-  <!-- Heatmap -->
-  <div class="card" id="hmCard">
-    <div class="hd">
-      <h3 id="hmTitle">Options P&amp;L Heatmap — Spot × Time (Constant IV)</h3>
-      <span id="hmTip" style="font-size:9px;color:var(--mut);font-family:monospace"></span>
-    </div>
-    <div class="bd">
-      <canvas id="heatmapCanvas"></canvas>
-      <div class="hm-leg">
-        <span>■ <span style="color:var(--grn)">Max profit</span></span>
-        <span>■ <span style="color:#333">Breakeven</span></span>
-        <span>■ <span style="color:var(--red)">Max loss</span></span>
-        <span style="color:var(--mut)">· White line = breakeven boundary · Dashed = current spot · Top-right legend = $ scale</span>
       </div>
     </div>
-  </div>
 
-  <!-- Greeks Dashboard -->
-  <div class="card" id="greeksCard" style="flex-shrink:0;margin-top:4px">
-    <div class="hd" style="height:auto;padding:4px 8px;gap:6px;flex-wrap:wrap">
-      <h3>Greeks vs Spot Price</h3>
-      <span style="font-size:9px;color:var(--mut)">Expiry:</span>
-      <select id="greeksExpiry" style="font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 4px" onchange="renderGreeksDashboard()">
-        <option value="all">All / Portfolio</option>
-      </select>
-      <div style="display:flex;gap:2px;margin-left:4px">
-        <button id="gfAll"  class="lev-btn on" onclick="setGreeksFilter('all')"  style="font-size:9px;padding:2px 7px">All</button>
-        <button id="gfCall" class="lev-btn"    onclick="setGreeksFilter('call')" style="font-size:9px;padding:2px 7px">Calls</button>
-        <button id="gfPut"  class="lev-btn"    onclick="setGreeksFilter('put')"  style="font-size:9px;padding:2px 7px">Puts</button>
-      </div>
-      <span style="font-size:9px;color:var(--mut);margin-left:auto">Per-contract values × 100 shares</span>
-    </div>
-    <div class="bd" style="padding:6px 8px">
-      <div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:6px;height:280px">
-        <div style="position:relative"><canvas id="gDeltaChart"></canvas></div>
-        <div style="position:relative"><canvas id="gGammaChart"></canvas></div>
-        <div style="position:relative"><canvas id="gThetaChart"></canvas></div>
-        <div style="position:relative"><canvas id="gVegaChart"></canvas></div>
-      </div>
-    </div>
-  </div>
+  </div><!-- /rsStrategy -->
 
-</div><!-- /main -->
+  <!-- ══ TAB: PRICES ══ -->
+  <div class="sb-pane" id="rsPrices" style="display:none">
+    <div class="card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0">
+      <div class="hd"><h3>Option Prices</h3>
+        <div style="display:flex;gap:4px;align-items:center">
+          <div style="display:flex;gap:2px">
+            <button id="pcAll"  class="lev-btn on" onclick="setPriceFilter('all')"  style="font-size:9px;padding:2px 7px">All</button>
+            <button id="pcCall" class="lev-btn"    onclick="setPriceFilter('call')" style="font-size:9px;padding:2px 7px">Calls</button>
+            <button id="pcPut"  class="lev-btn"    onclick="setPriceFilter('put')"  style="font-size:9px;padding:2px 7px">Puts</button>
+          </div>
+          <select id="pcExpiry" onchange="renderPricesTable()" style="font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 3px">
+            <option value="all">All expiries</option>
+          </select>
+          <span id="pcLiveNote" style="font-size:9px;color:var(--ylw)"></span>
+        </div>
+      </div>
+      <div style="flex:1;overflow:auto;min-height:0">
+        <table id="pricesTable" style="width:100%;border-collapse:collapse;font-size:9px;font-family:monospace">
+          <thead style="position:sticky;top:0;background:var(--sur2);z-index:1">
+            <tr>
+              <th style="padding:3px 5px;text-align:left;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Type</th>
+              <th style="padding:3px 5px;text-align:left;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Expiry</th>
+              <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Strike</th>
+              <th style="padding:3px 5px;text-align:right;color:var(--grn);font-weight:600;border-bottom:1px solid var(--bdr)">Bid</th>
+              <th style="padding:3px 5px;text-align:right;color:var(--red);font-weight:600;border-bottom:1px solid var(--bdr)">Ask</th>
+              <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Mid</th>
+              <th style="padding:3px 5px;text-align:right;color:var(--blu);font-weight:600;border-bottom:1px solid var(--bdr)">IV%</th>
+              <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Δ</th>
+              <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Θ/day</th>
+              <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Vega</th>
+              <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">MoM%</th>
+              <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)"></th>
+            </tr>
+          </thead>
+          <tbody id="pricesBody">
+            <tr><td colspan="12" style="padding:12px;text-align:center;color:var(--mut)">Load live data to see option prices</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /rsPrices -->
+
+  <!-- ══ TAB: LEAP ══ -->
+  <div class="sb-pane" id="rsLeap" style="display:none">
+    <div class="card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0">
+      <div class="hd"><h3>LEAP Strike Scanner</h3></div>
+      <div style="padding:6px 8px;border-bottom:1px solid var(--bdr);display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;flex-shrink:0">
+        <div>
+          <label class="lbl" style="margin-top:0">Expiry Date</label>
+          <input type="date" id="leapExp" value="2028-01-17" onchange="renderLeapScanner()" style="width:130px">
+        </div>
+        <div>
+          <label class="lbl" style="margin-top:0">Contracts</label>
+          <input type="number" id="leapQty" value="1" step="1" min="1" style="width:55px" onchange="renderLeapScanner()">
+        </div>
+        <div style="font-size:9px;color:var(--mut);line-height:1.5">
+          Edit <strong style="color:var(--ylw)">Bid $</strong> to enter real prices.
+        </div>
+      </div>
+      <div style="flex:1;overflow:auto;padding:4px 8px">
+        <div id="leapScannerWrap"><div class="empty">Adjust spot &amp; IV in sidebar to update.</div></div>
+      </div>
+    </div>
+  </div><!-- /rsLeap -->
+
+</aside><!-- /rightSidebar -->
+
 </div><!-- /app -->
 
 <script>
@@ -838,20 +894,23 @@ function initResizers() {
     axis:'x',
     getSize:()=>document.getElementById('sidebar').offsetWidth,
     setSize:w=>{w=Math.max(170,Math.min(440,w));document.getElementById('sidebar').style.width=w+'px';},
-    onDone:()=>{renderChart();renderHeatmap();}
+    onDone:()=>reRenderActiveViews()
   });
-  makeDragger(document.getElementById('rz-mid'),{
+  makeDragger(document.getElementById('rz-right'),{
     axis:'x',
-    getSize:()=>document.getElementById('builderCard').offsetWidth,
-    setSize:w=>{w=Math.max(180,Math.min(700,w));document.getElementById('builderCard').style.width=w+'px';},
-    onDone:()=>renderChart()
+    getSize:()=>document.getElementById('rightSidebar').offsetWidth,
+    setSize:w=>{w=Math.max(190,Math.min(520,w));document.getElementById('rightSidebar').style.width=w+'px';},
+    onDone:()=>reRenderActiveViews()
   });
-  makeDragger(document.getElementById('rz-hm'),{
+  makeDragger(document.getElementById('rzSplit'),{
     axis:'y',
-    getSize:()=>document.getElementById('hmCard').offsetHeight,
-    setSize:h=>{h=Math.max(70,Math.min(500,h));document.getElementById('hmCard').style.height=h+'px';},
-    onMove:()=>scheduleHeatmap(),
-    onDone:()=>renderHeatmap()
+    getSize:()=>document.getElementById('pane1').offsetHeight,
+    setSize:h=>{
+      h=Math.max(100,h);
+      document.getElementById('pane1').style.flex='none';
+      document.getElementById('pane1').style.height=h+'px';
+    },
+    onDone:()=>reRenderActiveViews()
   });
 }
 
@@ -1121,15 +1180,12 @@ function sbTab(btn){
 // BUILDER TABS
 // ═══════════════════════════════════════════════════════
 function switchBuilderTab(btn){
-  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('on'));
-  btn.classList.add('on');
-  const tab=btn.dataset.tab;
-  document.getElementById('builderContent').style.display=tab==='builder'?'flex':'none';
-  document.getElementById('leapContent').style.display=tab==='leap'?'flex':'none';
-  document.getElementById('pricesContent').style.display=tab==='prices'?'flex':'none';
-  document.getElementById('addLegBtn').style.display=tab==='builder'?'':'none';
-  if(tab==='leap') renderLeapScanner();
-  if(tab==='prices') renderPricesTable();
+  // kept for compatibility — now delegated to rsTab
+  const tab=btn?.dataset?.tab;
+  if(!tab) return;
+  const map={builder:'strategy',prices:'prices',leap:'leap'};
+  const rsBtn=document.querySelector(`#rightSidebar .sb-tab[data-tab="${map[tab]||tab}"]`);
+  if(rsBtn) rsTab(rsBtn);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1155,8 +1211,9 @@ function leapAddToLegs(K,exp,qty){
   document.getElementById('rsType').value='call';
   document.getElementById('rsAction').value='buy';
   rsState.type='call';rsState.action='buy';rsState.K0=K;rsState.prem0=prem;
-  // Switch builder to legs view
-  document.querySelectorAll('.tab-btn').forEach(b=>{if(b.dataset.tab==='builder')switchBuilderTab(b);});
+  // Switch right sidebar to strategy tab
+  const rsStratBtn=document.querySelector('#rightSidebar .sb-tab[data-tab="strategy"]');
+  if(rsStratBtn) rsTab(rsStratBtn);
   renderAll();
 }
 
@@ -1275,8 +1332,9 @@ function renderPricesTable(){
 function addLegFromPrice(idx){
   const o=_priceRows[idx];
   if(!o) return;
-  // Switch to builder tab
-  switchBuilderTab(document.querySelector('.tab-btn[data-tab="builder"]'));
+  // Switch to strategy tab
+  const rsStratBtn2=document.querySelector('#rightSidebar .sb-tab[data-tab="strategy"]');
+  if(rsStratBtn2) rsTab(rsStratBtn2);
   // Pre-fill form fields
   const fType=document.getElementById('fType');
   const fAction=document.getElementById('fAction');
@@ -2000,7 +2058,7 @@ function fitSmileAndFinish(spot,status,btn,note=''){
   if(state.liveOptions.length>0) setLiveLock(true);
   startLiveTimer();
   // Refresh prices table if open
-  if(document.querySelector('.tab-btn[data-tab="prices"]')?.classList.contains('on')) renderPricesTable();
+  if(document.querySelector('#rightSidebar .sb-tab[data-tab="prices"]')?.classList.contains('on')) renderPricesTable();
   renderAll();
 }
 
@@ -3108,9 +3166,7 @@ function renderHeatmap(){
 function renderIncomeSummary(){
   const covered=Math.floor(state.shares/100);
 
-  // Update covered note
-  document.getElementById('coveredNote').innerHTML=
-    `${state.shares} shares → up to <strong style="color:var(--blu)">${covered}</strong> covered call contracts without naked exposure.`;
+  // coveredNote removed from UI — no-op
 
   // Net premium
   let netPrem=0,minDTE=Infinity;
@@ -3148,16 +3204,6 @@ function renderIncomeSummary(){
   dteEl.textContent=minDTE<Infinity?Math.round(minDTE)+'d':'—';
   dteEl.className='inc-val neu';
 
-  // Budget bar
-  const pct=state.cash>0?Math.min(100,cap/state.cash*100):0;
-  const fill=document.getElementById('budgetFill');
-  fill.style.width=pct+'%';
-  fill.style.background=pct>100?'var(--red)':pct>80?'var(--ylw)':'var(--grn)';
-  document.getElementById('capReqVal').textContent=cap?'$'+Math.round(cap).toLocaleString():'$0';
-  const budgEl=document.getElementById('budgetNote');
-  if(!cap){budgEl.textContent='No capital required (all covered calls)';}
-  else if(cap<=state.cash){budgEl.innerHTML=`✓ Within budget — $${Math.round(state.cash-cap).toLocaleString()} remaining`;}
-  else{budgEl.innerHTML=`<span style="color:var(--red)">⚠ Exceeds budget by $${Math.round(cap-state.cash).toLocaleString()} — reduce contracts or add leverage</span>`;}
 }
 
 function renderGreeks(){
@@ -3225,12 +3271,95 @@ function renderLegs(){
 }
 
 function renderAll(){
-  renderLegs();renderGreeks();renderIncomeSummary();renderChart();scheduleHeatmap();
+  renderLegs();renderGreeks();renderIncomeSummary();
+  reRenderActiveViews();
   renderRollSim();
-  const lc=document.getElementById('leapContent');
-  if(lc&&lc.style.display!=='none')renderLeapScanner();
   updateGreeksExpiries();
-  renderGreeksDashboard();
+}
+
+// ── Center view management ──
+let _pane1View='pnl';
+let _pane2View='heatmap';
+let _splitActive=false;
+
+const _viewCards={pnl:'chartCard',heatmap:'hmCard',greeks:'greeksCard'};
+
+function setCenterView(pane,view){
+  if(pane===1){
+    if(_splitActive&&view===_pane2View){
+      // swap
+      _pane2View=_pane1View;
+    }
+    _pane1View=view;
+  } else {
+    if(view===_pane1View){
+      _pane1View=_pane2View;
+    }
+    _pane2View=view;
+  }
+  _applyViewLayout();
+}
+
+function toggleSplit(){
+  _splitActive=!_splitActive;
+  document.getElementById('pane2').style.display=_splitActive?'flex':'none';
+  document.getElementById('rzSplit').style.display=_splitActive?'':'none';
+  if(_splitActive&&_pane2View===_pane1View){
+    const views=['pnl','heatmap','greeks'];
+    _pane2View=views.find(v=>v!==_pane1View)||'heatmap';
+  }
+  // Reset pane1 flex when toggling
+  const p1=document.getElementById('pane1');
+  p1.style.flex='1'; p1.style.height='';
+  _applyViewLayout();
+}
+
+function _applyViewLayout(){
+  const p1b=document.getElementById('pane1Body');
+  const p2b=document.getElementById('pane2Body');
+  // Move all view cards to pane1Body initially (hidden)
+  for(const[,cardId] of Object.entries(_viewCards)){
+    const el=document.getElementById(cardId);
+    if(el&&el.parentElement!==p1b) p1b.appendChild(el);
+    el.style.display='none';
+  }
+  // Show pane1 view
+  const p1el=document.getElementById(_viewCards[_pane1View]);
+  if(p1el){p1el.style.display='flex';}
+  // Handle split: move pane2 view to pane2Body
+  if(_splitActive){
+    const p2el=document.getElementById(_viewCards[_pane2View]);
+    if(p2el){p2b.appendChild(p2el);p2el.style.display='flex';}
+  }
+  // Update nav button states
+  ['pnl','heatmap','greeks'].forEach(v=>{
+    const b1=document.getElementById('p1'+v);
+    const b2=document.getElementById('p2'+v);
+    if(b1) b1.classList.toggle('on',v===_pane1View);
+    if(b2) b2.classList.toggle('on',v===_pane2View);
+  });
+  // Re-render what's now visible
+  reRenderActiveViews();
+}
+
+function reRenderActiveViews(){
+  if(_pane1View==='pnl'||(_splitActive&&_pane2View==='pnl')) renderChart();
+  if(_pane1View==='heatmap'||(_splitActive&&_pane2View==='heatmap')) scheduleHeatmap();
+  if(_pane1View==='greeks'||(_splitActive&&_pane2View==='greeks')) renderGreeksDashboard();
+}
+
+// ── Right sidebar tab switching ──
+function rsTab(btn){
+  document.querySelectorAll('.sb-tab[data-tab]').forEach(b=>{
+    if(b.closest('#rightSidebar')) b.classList.remove('on');
+  });
+  btn.classList.add('on');
+  const tab=btn.dataset.tab;
+  document.getElementById('rsStrategy').style.display=tab==='strategy'?'flex':'none';
+  document.getElementById('rsPrices').style.display=tab==='prices'?'flex':'none';
+  document.getElementById('rsLeap').style.display=tab==='leap'?'flex':'none';
+  if(tab==='prices') renderPricesTable();
+  if(tab==='leap') renderLeapScanner();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3327,63 +3456,53 @@ function loadPreset(name){
   });
 
   if(name==='cc_monthly'){
-    // Sell 7 covered calls, 30 DTE, Δ≈0.20 (OTM)
     const K=strikeForDelta(0.20,'call',exp30);
     const prem=bsPrice(S,K,getT(exp30),r,iv,'call');
-    state.legs=[mk('call','sell',K,exp30,7)];
+    state.legs=[mk('call','sell',K,exp30,1)];
     syncRsFromLeg('call','sell',K,prem);
   }
   if(name==='cc_weekly'){
-    // Sell 7 covered calls, 7 DTE, Δ≈0.20
     const K=strikeForDelta(0.20,'call',exp7);
     const prem=bsPrice(S,K,getT(exp7),r,iv,'call');
-    state.legs=[mk('call','sell',K,exp7,7)];
+    state.legs=[mk('call','sell',K,exp7,1)];
     syncRsFromLeg('call','sell',K,prem);
   }
   if(name==='csp'){
-    // Sell 1 cash-secured put, 30 DTE, Δ≈0.25 (slightly OTM)
     const K=strikeForDelta(0.25,'put',exp30);
-    const perContract=K*100/state.leverage;
-    const qty=Math.max(1,Math.floor(state.cash/perContract));
     const prem=bsPrice(S,K,getT(exp30),r,iv,'put');
-    state.legs=[mk('put','sell',K,exp30,qty)];
+    state.legs=[mk('put','sell',K,exp30,1)];
     syncRsFromLeg('put','sell',K,prem);
   }
   if(name==='strangle'){
-    // Sell OTM call (Δ0.20) + OTM put (Δ0.20), 30 DTE — sync roll sim to the call leg
     const callK=strikeForDelta(0.20,'call',exp30);
     const putK =strikeForDelta(0.20,'put', exp30);
     const callPrem=bsPrice(S,callK,getT(exp30),r,iv,'call');
     state.legs=[
-      mk('call','sell',callK,exp30,7),
+      mk('call','sell',callK,exp30,1),
       mk('put', 'sell',putK, exp30,1),
     ];
     syncRsFromLeg('call','sell',callK,callPrem);
   }
   if(name==='condor'){
-    // Iron condor: sell Δ0.20 call + sell Δ0.20 put, buy wings ~7% further out
     const callK=strikeForDelta(0.20,'call',exp45);
     const putK =strikeForDelta(0.20,'put', exp45);
     const wingWidth=Math.round(S*0.07/5)*5;
     const callPrem=bsPrice(S,callK,getT(exp45),r,iv,'call');
     state.legs=[
-      mk('call','sell',callK,          exp45,7),
-      mk('call','buy', callK+wingWidth,exp45,7),
+      mk('call','sell',callK,          exp45,1),
+      mk('call','buy', callK+wingWidth,exp45,1),
       mk('put', 'sell',putK,           exp45,1),
       mk('put', 'buy', putK-wingWidth, exp45,1),
     ];
     syncRsFromLeg('call','sell',callK,callPrem);
   }
   if(name==='wheel'){
-    // Cash-secured put to accumulate + covered calls for income
     const callK=strikeForDelta(0.20,'call',exp30);
     const putK =strikeForDelta(0.25,'put', exp30);
-    const perContract=putK*100/state.leverage;
-    const cspQty=Math.max(1,Math.floor(state.cash/perContract));
     const callPrem=bsPrice(S,callK,getT(exp30),r,iv,'call');
     state.legs=[
-      mk('call','sell',callK,exp30,7),
-      mk('put', 'sell',putK, exp30,cspQty),
+      mk('call','sell',callK,exp30,1),
+      mk('put', 'sell',putK, exp30,1),
     ];
     syncRsFromLeg('call','sell',callK,callPrem);
   }
@@ -3563,19 +3682,19 @@ function renderGreeksDashboard(){
 window.addEventListener('load',()=>{
   document.getElementById('fStrike').value=state.spot;
   initResizers();
-  // Check for Saxo OAuth callback (#access_token= in fragment) before normal init
+  _applyViewLayout(); // set up center panes before rendering
+  // Check for Saxo OAuth callback
   if(window.location.hash.includes('access_token=')){
-    loadPreset('wheel'); // default state first, then restore overwrites it
-    handleSaxoCallback(); // restores saved state + activates token
+    handleSaxoCallback();
   } else {
-    loadPreset('wheel');
+    renderAll();
     renderRollSim();
   }
 });
 let rzTimer;
 window.addEventListener('resize',()=>{
   clearTimeout(rzTimer);
-  rzTimer=setTimeout(()=>{renderChart();renderHeatmap();},80); // full quality after resize
+  rzTimer=setTimeout(()=>reRenderActiveViews(),80);
 });
 </script>
 </body>
