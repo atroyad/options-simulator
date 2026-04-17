@@ -28,13 +28,14 @@ header p{font-size:10px;color:var(--mut);}
   font-size:9px;font-weight:700;margin-left:auto;}
 
 /* ── ROOT ── */
+/* Full-height app; individual panels own their own scroll */
 .app{display:flex;height:calc(100vh - 40px);overflow:hidden;user-select:none;}
 
-/* ── SIDEBAR ── */
+/* ── SIDEBAR (left) ── */
 #sidebar{
   width:250px;min-width:170px;max-width:440px;flex-shrink:0;
   background:var(--sur);border-right:1px solid var(--bdr);
-  overflow-y:auto;display:flex;flex-direction:column;gap:5px;padding:6px;
+  overflow:auto;display:flex;flex-direction:column;gap:5px;padding:6px;
 }
 
 /* ── DRAG HANDLES ── */
@@ -48,6 +49,7 @@ header p{font-size:10px;color:var(--mut);}
 
 /* ── CENTER ── */
 #center{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;}
+/* Each pane is independently scrollable — both axes */
 #pane1,#pane2{display:flex;flex-direction:column;min-height:0;overflow:hidden;}
 #pane1{flex:1;}
 #pane2{flex:1;}
@@ -57,21 +59,23 @@ header p{font-size:10px;color:var(--mut);}
   background:transparent;color:var(--mut);font-size:10px;cursor:pointer;font-weight:500;white-space:nowrap;}
 .pnav-btn:hover{color:var(--txt);}
 .pnav-btn.on{color:var(--blu);border-bottom-color:var(--blu);font-weight:700;}
-/* Pane bodies scroll — content is never clipped */
-#pane1Body,#pane2Body{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;padding:4px;}
-.view-card{flex:1;min-height:0;display:flex;flex-direction:column;overflow:visible;}
+/* Pane bodies: scroll both axes */
+#pane1Body,#pane2Body{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;padding:4px;}
+.view-card{flex:1;display:flex;flex-direction:column;overflow:visible;}
 
-/* Chart card fills pane and clips canvas properly */
-#chartCard{flex:1;min-height:340px;display:flex;flex-direction:column;overflow:hidden;}
-#chartCard .bd{flex:1;min-height:0;display:flex;flex-direction:column;padding:6px 8px;}
-.chart-wrap{flex:1;position:relative;min-height:240px;}
-/* Heatmap fills pane */
-#hmCard{flex:1;min-height:200px;display:flex;flex-direction:column;overflow:hidden;}
+/* Chart card: min sizes ensure axis labels always visible */
+#chartCard{min-height:320px;display:flex;flex-direction:column;overflow:hidden;flex:1;}
+#chartCard .bd{flex:1;min-height:0;display:flex;flex-direction:column;padding:6px 8px;overflow:auto;}
+.chart-wrap{flex:1;position:relative;min-height:220px;min-width:300px;}
+
+/* Heatmap */
+#hmCard{min-height:200px;display:flex;flex-direction:column;overflow:hidden;flex:1;}
 #hmCard .bd{flex:1;min-height:0;display:flex;flex-direction:column;gap:3px;padding:5px 8px;}
 #heatmapCanvas{display:block;cursor:crosshair;width:100%;flex:1;min-height:0;}
-/* Greeks: natural height, 2×2 grid with fixed row height */
-#greeksCard{display:flex;flex-direction:column;overflow:visible;min-height:360px;}
-#greeksCard .bd{flex:1;padding:6px 8px;}
+
+/* Greeks: 2×2 grid, each chart 160px tall, grid scrolls if needed */
+#greeksCard{display:flex;flex-direction:column;min-height:380px;flex:1;}
+#greeksCard .bd{padding:6px 8px;}
 .greeks-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
 .greeks-grid>div{position:relative;height:160px;}
 
@@ -79,8 +83,8 @@ header p{font-size:10px;color:var(--mut);}
 #rightSidebar{width:300px;min-width:190px;max-width:520px;flex-shrink:0;
   background:var(--sur);border-left:1px solid var(--bdr);
   overflow:hidden;display:flex;flex-direction:column;}
-/* Right sidebar panes scroll */
-#rightSidebar .sb-pane{overflow-y:auto;overflow-x:hidden;}
+/* Right sidebar panes: scroll both axes */
+#rightSidebar .sb-pane{overflow:auto;}
 
 /* ── CARDS ── */
 .card{background:var(--sur);border:1px solid var(--bdr);border-radius:6px;overflow:hidden;}
@@ -237,6 +241,12 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
   .pc{flex:1 1 100%;}
   header h1{font-size:12px;}
   .pnav-btn{font-size:9px;padding:2px 6px;}
+  /* Phone portrait: chart needs horizontal room for y-axis labels */
+  #chartCard{min-width:0;}
+  .chart-wrap{min-width:340px;} /* forces horizontal scroll in pane body if narrower */
+  /* Greeks stack to single column on very small screens */
+  .greeks-grid{grid-template-columns:1fr;}
+  .greeks-grid>div{height:180px;}
 }
 </style>
 </head>
@@ -678,14 +688,14 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
   <div class="rz rz-h" id="rzSplit" style="display:none"></div>
 
   <!-- Pane 2 -->
-  <div id="pane2" style="display:none;flex-direction:column;min-height:0;overflow:hidden">
+  <div id="pane2" style="display:none;flex-direction:column;min-height:0;overflow:auto">
     <div class="pane-bar">
       <button class="pnav-btn" id="p2pnl"     onclick="setCenterView(2,'pnl')">P&amp;L / Smile</button>
       <button class="pnav-btn on" id="p2heatmap" onclick="setCenterView(2,'heatmap')">Heatmap</button>
       <button class="pnav-btn" id="p2greeks"  onclick="setCenterView(2,'greeks')">Greeks</button>
       <button class="btn" onclick="toggleSplit()" style="margin-left:auto;font-size:9px;padding:1px 7px">✕ Unsplit</button>
     </div>
-    <div id="pane2Body" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;padding:4px">
+    <div id="pane2Body" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto;padding:4px">
     </div>
   </div><!-- /pane2 -->
 
