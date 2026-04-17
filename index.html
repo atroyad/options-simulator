@@ -57,22 +57,30 @@ header p{font-size:10px;color:var(--mut);}
   background:transparent;color:var(--mut);font-size:10px;cursor:pointer;font-weight:500;white-space:nowrap;}
 .pnav-btn:hover{color:var(--txt);}
 .pnav-btn.on{color:var(--blu);border-bottom-color:var(--blu);font-weight:700;}
-#pane1Body,#pane2Body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;padding:4px;}
-.view-card{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
+/* Pane bodies scroll — content is never clipped */
+#pane1Body,#pane2Body{flex:1;min-height:0;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;padding:4px;}
+.view-card{flex:1;min-height:0;display:flex;flex-direction:column;overflow:visible;}
 
-/* view cards: reuse .card styles but fill pane */
-#chartCard{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;}
+/* Chart card fills pane and clips canvas properly */
+#chartCard{flex:1;min-height:340px;display:flex;flex-direction:column;overflow:hidden;}
 #chartCard .bd{flex:1;min-height:0;display:flex;flex-direction:column;padding:6px 8px;}
-.chart-wrap{flex:1;position:relative;min-height:0;}
-#hmCard{flex:1;min-height:70px;display:flex;flex-direction:column;overflow:hidden;}
+.chart-wrap{flex:1;position:relative;min-height:240px;}
+/* Heatmap fills pane */
+#hmCard{flex:1;min-height:200px;display:flex;flex-direction:column;overflow:hidden;}
 #hmCard .bd{flex:1;min-height:0;display:flex;flex-direction:column;gap:3px;padding:5px 8px;}
 #heatmapCanvas{display:block;cursor:crosshair;width:100%;flex:1;min-height:0;}
-#greeksCard{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
+/* Greeks: natural height, 2×2 grid with fixed row height */
+#greeksCard{display:flex;flex-direction:column;overflow:visible;min-height:360px;}
+#greeksCard .bd{flex:1;padding:6px 8px;}
+.greeks-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.greeks-grid>div{position:relative;height:160px;}
 
 /* ── RIGHT SIDEBAR ── */
 #rightSidebar{width:300px;min-width:190px;max-width:520px;flex-shrink:0;
   background:var(--sur);border-left:1px solid var(--bdr);
   overflow:hidden;display:flex;flex-direction:column;}
+/* Right sidebar panes scroll */
+#rightSidebar .sb-pane{overflow-y:auto;overflow-x:hidden;}
 
 /* ── CARDS ── */
 .card{background:var(--sur);border:1px solid var(--bdr);border-radius:6px;overflow:hidden;}
@@ -653,12 +661,12 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
         </div>
         <span style="font-size:9px;color:var(--mut);margin-left:auto">Per-contract × 100 shares</span>
       </div>
-      <div class="bd" style="padding:6px 8px;flex:1;min-height:0">
-        <div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:6px;height:100%">
-          <div style="position:relative"><canvas id="gDeltaChart"></canvas></div>
-          <div style="position:relative"><canvas id="gGammaChart"></canvas></div>
-          <div style="position:relative"><canvas id="gThetaChart"></canvas></div>
-          <div style="position:relative"><canvas id="gVegaChart"></canvas></div>
+      <div class="bd" style="padding:6px 8px">
+        <div class="greeks-grid">
+          <div><canvas id="gDeltaChart"></canvas></div>
+          <div><canvas id="gGammaChart"></canvas></div>
+          <div><canvas id="gThetaChart"></canvas></div>
+          <div><canvas id="gVegaChart"></canvas></div>
         </div>
       </div>
     </div><!-- /greeksCard -->
@@ -737,7 +745,7 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
     </div>
 
     <!-- Builder -->
-    <div class="card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:200px">
+    <div class="card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:240px">
       <div class="hd" style="height:auto;flex-wrap:wrap;gap:0;padding:0 8px 0 0">
         <h3 style="padding-left:8px">Strategy Builder</h3>
         <button class="btn btnp" id="addLegBtn" onclick="toggleForm()" style="margin-left:auto">+ Add Leg</button>
