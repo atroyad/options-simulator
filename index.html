@@ -640,9 +640,18 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
 
     <!-- ── HEATMAP CARD ── -->
     <div class="card view-card" id="hmCard" style="display:none">
-      <div class="hd">
-        <h3 id="hmTitle">Options P&amp;L Heatmap — Spot × Time (Constant IV)</h3>
-        <span id="hmTip" style="font-size:9px;color:var(--mut);font-family:monospace"></span>
+      <div class="hd" style="height:auto;flex-wrap:wrap;padding:4px 8px;gap:4px">
+        <h3 id="hmTitle" style="white-space:nowrap">P&amp;L Heatmap</h3>
+        <span style="font-size:9px;color:var(--mut)">X:</span>
+        <input type="number" id="hmMin" value="100" min="1" max="99999" step="10"
+          style="width:62px;font-size:9px;padding:1px 4px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px"
+          oninput="scheduleHeatmap()">
+        <span style="font-size:9px;color:var(--mut)">–</span>
+        <input type="number" id="hmMax" value="400" min="2" max="99999" step="10"
+          style="width:62px;font-size:9px;padding:1px 4px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px"
+          oninput="scheduleHeatmap()">
+        <span style="font-size:8px;color:var(--mut)">scroll/drag to zoom·pan</span>
+        <span id="hmTip" style="font-size:9px;color:var(--mut);font-family:monospace;margin-left:auto"></span>
       </div>
       <div class="bd">
         <canvas id="heatmapCanvas"></canvas>
@@ -3058,8 +3067,8 @@ function renderHeatmap(){
   const PAD_B=14,PAD_L=26;
   const COLS=70,ROWS=Math.max(6,Math.floor((ch-PAD_B)/7));
   const cW=(cw-PAD_L)/COLS,rH=(ch-PAD_B)/ROWS;
-  const lo=+document.getElementById('rMin').value;
-  const hi=+document.getElementById('rMax').value;
+  const lo=Math.max(1,+document.getElementById('hmMin').value||1);
+  const hi=Math.max(lo+1,+document.getElementById('hmMax').value||lo+1);
   const maxDays=Math.max(30,...state.legs.map(l=>getT(l.exp)*365));
   const hasVolCorr=state.hmVolCorr&&(state.spotVolRho||0)>0.01;
 
@@ -3212,6 +3221,7 @@ function renderHeatmap(){
   ctx.textAlign='left'; ctx.fillText(fmtK(maxGain),legX,legY+legH+7);
   ctx.textAlign='center';ctx.fillText('$0',legX+legW/2,legY+legH+7);
   ctx.textAlign='right'; ctx.fillText(fmtK(-maxLoss),legX+legW,legY+legH+7);
+  // ── Tooltip on hover ──
   canvas.onmousemove=e=>{
     const rect=canvas.getBoundingClientRect();
     const c=Math.floor((e.clientX-rect.left-PAD_L)/cW);
@@ -3226,6 +3236,39 @@ function renderHeatmap(){
     }
   };
   canvas.ontouchmove=e=>{e.preventDefault();canvas.onmousemove({clientX:e.touches[0].clientX,clientY:e.touches[0].clientY});};
+
+  // ── Scroll to zoom x-axis ──
+  canvas.onwheel=e=>{
+    e.preventDefault();
+    const rect=canvas.getBoundingClientRect();
+    const frac=Math.max(0,Math.min(1,(e.clientX-rect.left-PAD_L)/((cw-PAD_L)||1)));
+    const pivot=lo+frac*(hi-lo);
+    const factor=e.deltaY>0?1.1:0.9;
+    const newLo=Math.max(1,Math.round(pivot-(pivot-lo)*factor));
+    const newHi=Math.max(newLo+1,Math.round(pivot+(hi-pivot)*factor));
+    document.getElementById('hmMin').value=newLo;
+    document.getElementById('hmMax').value=newHi;
+    scheduleHeatmap();
+  };
+
+  // ── Click+drag to pan ──
+  let _hmDragX=null,_hmDragLo=null,_hmDragHi=null;
+  canvas.onmousedown=e=>{_hmDragX=e.clientX;_hmDragLo=lo;_hmDragHi=hi;};
+  canvas.onmouseup=()=>{_hmDragX=null;};
+  canvas.onmouseleave=()=>{_hmDragX=null;};
+  const _hmOldMove=canvas.onmousemove;
+  canvas.onmousemove=e=>{
+    _hmOldMove(e);
+    if(_hmDragX===null||!(e.buttons&1)) return;
+    const dx=_hmDragX-e.clientX; // pixels dragged right → pan right
+    const range=_hmDragHi-_hmDragLo;
+    const shift=Math.round(dx/((cw-PAD_L)||1)*range);
+    const newLo=Math.max(1,_hmDragLo+shift);
+    const newHi=newLo+range;
+    document.getElementById('hmMin').value=newLo;
+    document.getElementById('hmMax').value=newHi;
+    scheduleHeatmap();
+  };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3600,11 +3643,24 @@ function loadPreset(name){
 // ═══════════════════════════════════════════════════════
 // CONTROLS
 // ═══════════════════════════════════════════════════════
+function initHmRange(){
+  const s=state.spot;
+  const minEl=document.getElementById('hmMin');
+  const maxEl=document.getElementById('hmMax');
+  if(!minEl||!maxEl) return;
+  // Only auto-init if values still at defaults or spot is completely outside current range
+  const lo=+minEl.value, hi=+maxEl.value;
+  if(lo===100&&hi===400||s<lo||s>hi){
+    minEl.value=Math.max(1,Math.round(s*0.5));
+    maxEl.value=Math.round(s*1.5);
+  }
+}
 function syncSpot(v){
   state.spot=+v;
   document.getElementById('dSpot').textContent='$'+v;
   document.getElementById('sSpot').value=v;
   document.getElementById('iSpot').value=v;
+  initHmRange();
   renderAll();
 }
 function syncIV(v){
@@ -3667,100 +3723,112 @@ function renderGreeksDashboard(){
   const selExp=document.getElementById('greeksExpiry')?.value||'all';
 
   // ── Data source: liveOptions (market chain) takes priority over strategy legs ──
-  // liveOptions: each row = {K, iv, type, exp, bid, ask} — treat as qty=1 long contract
-  // legs: user's strategy positions with qty, action, prem
   const useLive=state.liveOptions.length>0;
-  let positions;
-  if(useLive){
-    positions=state.liveOptions.filter(o=>{
+
+  // Build two position arrays — calls and puts — applying expiry filter but NOT type filter
+  // (type filter just controls which lines are visible, not which data is computed)
+  function getPositions(typeFilter){
+    const src=useLive?state.liveOptions:state.legs;
+    return src.filter(o=>{
       if(selExp!=='all'&&o.exp!==selExp) return false;
-      if(_greeksFilter!=='all'&&o.type!==_greeksFilter) return false;
+      if(o.type!==typeFilter) return false;
       return true;
-    }).map(o=>({K:o.K, type:o.type, exp:o.exp, iv:o.iv, qty:1, sign:1}));
-  } else {
-    positions=state.legs.filter(l=>{
-      if(selExp!=='all'&&l.exp!==selExp) return false;
-      if(_greeksFilter!=='all'&&l.type!==_greeksFilter) return false;
-      return true;
-    }).map(l=>({K:l.K, type:l.type, exp:l.exp, iv:null, qty:l.qty, sign:l.action==='sell'?-1:1}));
+    }).map(o=>useLive
+      ? {K:o.K, type:o.type, exp:o.exp, iv:o.iv, qty:1, sign:1}
+      : {K:o.K, type:o.type, exp:o.exp, iv:null, qty:o.qty, sign:o.action==='sell'?-1:1}
+    );
   }
+
+  const callPos=getPositions('call');
+  const putPos=getPositions('put');
 
   // Update source label
   const srcLbl=document.getElementById('greeksSrcLabel');
   if(srcLbl) srcLbl.textContent=useLive?'Market chain (1 contract each)':'Strategy legs';
 
-  const greekSets={delta:[],gamma:[],theta:[],vega:[]};
-  for(const S of spots){
-    let d=0,g=0,th=0,v=0;
-    for(const p of positions){
-      const T=getT(p.exp);
-      if(T<=0) continue;
-      // Use option's own market IV when from liveOptions; else use model IV
-      const iv=p.iv!=null
-        ? p.iv
-        : (state.ivSurface==='smile'?smileIV(p.K,S,state.iv):state.iv);
-      const gr=bsAll(S,p.K,T,state.rate,iv,p.type);
-      const n=p.qty*100*p.sign;
-      d+=gr.delta*n; g+=gr.gamma*n; th+=gr.theta*n; v+=gr.vega*n;
+  function computeGreekSeries(positions){
+    const sets={delta:[],gamma:[],theta:[],vega:[]};
+    for(const S of spots){
+      let d=0,g=0,th=0,v=0;
+      for(const p of positions){
+        const T=getT(p.exp);
+        if(T<=0) continue;
+        const iv=p.iv!=null ? p.iv : (state.ivSurface==='smile'?smileIV(p.K,S,state.iv):state.iv);
+        const gr=bsAll(S,p.K,T,state.rate,iv,p.type);
+        const n=p.qty*100*p.sign;
+        d+=gr.delta*n; g+=gr.gamma*n; th+=gr.theta*n; v+=gr.vega*n;
+      }
+      sets.delta.push(d); sets.gamma.push(g); sets.theta.push(th); sets.vega.push(v);
     }
-    greekSets.delta.push(d);
-    greekSets.gamma.push(g);
-    greekSets.theta.push(th);
-    greekSets.vega.push(v);
+    return sets;
   }
 
+  const callSets=computeGreekSeries(callPos);
+  const putSets=computeGreekSeries(putPos);
+
   const labels=spots.map(s=>'$'+Math.round(s));
-  // Index of current spot for reference line
-  const spotIdx=Math.round(steps/2);
+  const spotIdx=Math.round(steps/2); // current spot is always in the middle
 
   const cfgs=[
-    {id:'gDeltaChart',label:'Delta Δ',key:'delta',hex:'#58a6ff'},
-    {id:'gGammaChart',label:'Gamma Γ',key:'gamma',hex:'#3fb950'},
-    {id:'gThetaChart',label:'Theta Θ /day',key:'theta',hex:'#f85149'},
-    {id:'gVegaChart', label:'Vega V /1%IV',key:'vega', hex:'#bc8cff'},
+    {id:'gDeltaChart',label:'Delta Δ', key:'delta'},
+    {id:'gGammaChart',label:'Gamma Γ', key:'gamma'},
+    {id:'gThetaChart',label:'Theta Θ', key:'theta'},
+    {id:'gVegaChart', label:'Vega ν',  key:'vega'},
   ];
+
+  // Show/hide call/put lines based on filter
+  const showCall=_greeksFilter==='all'||_greeksFilter==='call';
+  const showPut =_greeksFilter==='all'||_greeksFilter==='put';
 
   for(const cfg of cfgs){
     const canvas=document.getElementById(cfg.id);
     if(!canvas) continue;
     if(_greeksCharts[cfg.id]){_greeksCharts[cfg.id].destroy();delete _greeksCharts[cfg.id];}
-    const data=greekSets[cfg.key];
+
+    const datasets=[];
+    if(showCall && callPos.length>0) datasets.push({
+      label:'Calls',
+      data:callSets[cfg.key],
+      borderColor:'#58a6ff',
+      backgroundColor:'rgba(88,166,255,0.15)',
+      borderWidth:1.5,
+      pointRadius:2,
+      pointHoverRadius:4,
+      pointBackgroundColor:'#58a6ff',
+      fill:false,
+      tension:0.3,
+    });
+    if(showPut && putPos.length>0) datasets.push({
+      label:'Puts',
+      data:putSets[cfg.key],
+      borderColor:'#f85149',
+      backgroundColor:'rgba(248,81,73,0.15)',
+      borderWidth:1.5,
+      pointRadius:2,
+      pointHoverRadius:4,
+      pointBackgroundColor:'#f85149',
+      fill:false,
+      tension:0.3,
+    });
+
     _greeksCharts[cfg.id]=new Chart(canvas,{
       type:'line',
-      data:{
-        labels,
-        datasets:[{
-          label:cfg.label,
-          data,
-          borderColor:cfg.hex,
-          borderWidth:2,
-          pointRadius:0,
-          fill:false,
-          tension:0.3,
-        }]
-      },
+      data:{labels,datasets},
       options:{
         responsive:true,
         maintainAspectRatio:false,
         animation:false,
         plugins:{
-          legend:{display:false},
-          annotation:{
-            annotations:{
-              spotLine:{
-                type:'line',
-                xMin:spotIdx,xMax:spotIdx,
-                borderColor:'rgba(255,255,255,0.25)',
-                borderWidth:1,borderDash:[3,3],
-              }
-            }
+          legend:{
+            display:datasets.length>1,
+            labels:{color:'#8b949e',font:{size:8},boxWidth:8,padding:6},
           },
           tooltip:{
             backgroundColor:'#161b22',borderColor:'#30363d',borderWidth:1,
             titleColor:'#c9d1d9',bodyColor:'#8b949e',
             callbacks:{
               title:i=>`Spot: ${i[0].label}`,
-              label:i=>{const a=Math.abs(i.raw);return `${cfg.label}: ${i.raw>=0?'':'-'}${a>=1000?(a/1000).toFixed(1)+'k':a.toFixed(3)}`;}
+              label:i=>{const a=Math.abs(i.raw);return `${i.dataset.label} ${cfg.label}: ${i.raw>=0?'':'-'}${a>=1000?(a/1000).toFixed(1)+'k':a.toFixed(3)}`;}
             }
           },
         },
@@ -3768,12 +3836,14 @@ function renderGreeksDashboard(){
           x:{
             ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:7,autoSkip:true,maxRotation:0},
             grid:{color:'#21262d'},
+            border:{color:'#30363d'},
           },
           y:{
             title:{display:true,text:cfg.label,color:'#8b949e',font:{size:8}},
             ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:5,
               callback:v=>{const a=Math.abs(v);return(v>=0?'':'-')+(a>=1000?(a/1000).toFixed(1)+'k':a.toFixed(2));}},
             grid:{color:'#21262d'},
+            border:{color:'#30363d'},
           }
         }
       }
@@ -3786,6 +3856,7 @@ function renderGreeksDashboard(){
 // ═══════════════════════════════════════════════════════
 window.addEventListener('load',()=>{
   document.getElementById('fStrike').value=state.spot;
+  initHmRange();
   initResizers();
   _applyViewLayout();
 

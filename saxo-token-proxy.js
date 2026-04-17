@@ -46,15 +46,38 @@ export default {
         // Yahoo v8 chart works without crumb; v7 options needs crumb — use v8 options fallback
         let yahooUrl, data, resp;
         if (type === 'options') {
-          // Try v8 options on query2 first (no crumb needed)
+          // Yahoo requires a crumb (CSRF token) tied to a session cookie.
+          // Step 1: Initialize a Yahoo session to get cookies.
+          let cookieStr = '';
+          try {
+            const initResp = await fetch('https://finance.yahoo.com/', { headers: hdrs, redirect: 'follow' });
+            const cookieParts = [];
+            for (const [k, v] of initResp.headers.entries()) {
+              if (k.toLowerCase() === 'set-cookie') cookieParts.push(v.split(';')[0]);
+            }
+            cookieStr = cookieParts.join('; ');
+          } catch (_) {}
+
+          // Step 2: Fetch crumb (plain-text token Yahoo ties to the session cookie).
+          let crumb = '';
+          try {
+            const crumbResp = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+              headers: { ...hdrs, Cookie: cookieStr },
+            });
+            if (crumbResp.ok) crumb = (await crumbResp.text()).trim();
+          } catch (_) {}
+
+          // Step 3: Fetch options chain. Try v7 then v8, both with crumb + cookie.
+          const hdrsWithCookie = cookieStr ? { ...hdrs, Cookie: cookieStr } : hdrs;
+          const crumbParam = crumb ? `&crumb=${encodeURIComponent(crumb)}` : '';
           const endpoints = [
-            `https://query2.finance.yahoo.com/v8/finance/options/${ticker}?formatted=false&lang=en-US&region=US`,
-            `https://query1.finance.yahoo.com/v7/finance/options/${ticker}?formatted=false&lang=en-US&region=US`,
-            `https://query1.finance.yahoo.com/v8/finance/options/${ticker}?formatted=false&lang=en-US&region=US`,
+            `https://query1.finance.yahoo.com/v7/finance/options/${ticker}?formatted=false&lang=en-US&region=US${crumbParam}`,
+            `https://query2.finance.yahoo.com/v8/finance/options/${ticker}?formatted=false&lang=en-US&region=US${crumbParam}`,
+            `https://query1.finance.yahoo.com/v8/finance/options/${ticker}?formatted=false${crumbParam}`,
           ];
           for (const ep of endpoints) {
-            resp = await fetch(ep, { headers: hdrs });
-            if (resp.ok) break; // stop on first success
+            resp = await fetch(ep, { headers: hdrsWithCookie });
+            if (resp.ok) break;
           }
         } else {
           yahooUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`;
