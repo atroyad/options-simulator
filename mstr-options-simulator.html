@@ -222,66 +222,26 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
   </div>
   <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-wrap:wrap">
     <span style="font-size:9px;color:var(--mut)">Mode:</span>
-    <button class="tgl on" id="modeSim"  onclick="setMode('sim')" >Simulation</button>
-    <button class="tgl"    id="modeLive" onclick="setMode('live')">Live Data</button>
-    <!-- Live data source selector — only shown in Live mode -->
+    <button class="tgl on" id="modeSim"  onclick="setMode('sim')">Simulation</button>
+    <button class="tgl"    id="modeLive" onclick="setMode('live')">Real Data</button>
+    <!-- Real data source row — only shown in Real Data mode -->
     <div id="liveSrcRow" style="display:none;align-items:center;gap:4px;flex-wrap:wrap">
-      <span style="font-size:9px;color:var(--mut)">Source:</span>
-      <button class="tgl on" id="srcYahoo" onclick="setLiveSource('yahoo')" style="font-size:9px;padding:1px 6px">Yahoo</button>
-      <button class="tgl"    id="srcSaxo"  onclick="setLiveSource('saxo')"  style="font-size:9px;padding:1px 6px">Saxo Bank</button>
-      <!-- Saxo controls — shown only when Saxo selected -->
+      <button class="tgl on" id="srcYahoo" onclick="setLiveSource('yahoo')" style="font-size:9px;padding:1px 6px">Delayed Yahoo</button>
+      <button class="tgl"    id="srcSaxo"  onclick="setLiveSource('saxo')"  style="font-size:9px;padding:1px 6px">Live Saxo</button>
+      <button class="tgl"    id="srcIbkr"  onclick="setLiveSource('ibkr')"  style="font-size:9px;padding:1px 6px">Live IBKR</button>
+      <!-- Saxo login controls — only shown when Saxo selected -->
       <div id="saxoControls" style="display:none;align-items:center;gap:4px;flex-wrap:wrap">
-        <span style="font-size:9px;color:var(--mut)">Env:</span>
-        <!-- SIM = developer.saxo token; Live = personal account OAuth -->
-        <button class="tgl on" id="saxoEnvSim"  onclick="setSaxoEnv('sim')"  style="font-size:9px;padding:1px 6px">SIM</button>
-        <button class="tgl"    id="saxoEnvLive" onclick="setSaxoEnv('live')" style="font-size:9px;padding:1px 6px">Live Acct</button>
-        <!-- SIM: paste token from developer.saxo OpenAPI Explorer -->
-        <!-- SIM: paste token directly (simplest, always works) -->
-        <div id="saxoSimUI" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
-          <input id="saxoTokenInput" type="password" placeholder="Paste SIM Bearer token"
-            style="font-size:9px;padding:2px 5px;width:150px;background:var(--sur2);
-              border:1px solid var(--bdr);color:var(--txt);border-radius:3px"
-            oninput="state.saxoToken=this.value.trim()"
-            title="Get token: developer.saxo → OpenAPI Explorer → log in → copy Bearer token">
-          <button class="btn" style="font-size:9px;padding:2px 7px"
-            onclick="if(state.saxoToken){fetchLiveData();}else{alert('Paste your SIM token first.');}"
-            >⟳ Fetch</button>
-          <button style="font-size:9px;padding:2px 5px;border:1px solid var(--bdr);
-            border-radius:3px;background:var(--sur2);color:var(--mut);cursor:pointer"
-            onclick="window.open('https://www.developer.saxo/openapi/token','_blank')"
-            title="Opens Saxo token page — log in with developer.saxo account, copy the Bearer token">
-            Get token ↗</button>
-          <span id="saxoAuthStatus" style="font-size:9px;color:var(--mut)"></span>
-        </div>
-        <!-- Live: same flow, different endpoint -->
-        <div id="saxoLiveUI" style="display:none;flex-direction:column;gap:3px">
-          <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
-            <input id="saxoClientId" type="text" placeholder="Live app client_id"
-              style="font-size:9px;padding:2px 5px;width:130px;background:var(--sur2);
-                border:1px solid var(--bdr);color:var(--txt);border-radius:3px"
-              oninput="state.saxoClientId=this.value"
-              title="client_id from your live app at developer.saxo.com → Apps">
-            <input id="saxoProxyUrl" type="text" placeholder="Proxy URL (workers.dev/…)"
-              style="font-size:9px;padding:2px 5px;width:170px;background:var(--sur2);
-                border:1px solid var(--bdr);color:var(--txt);border-radius:3px"
-              oninput="state.saxoProxyUrl=this.value.trim()"
-              title="Cloudflare Worker URL for token exchange — see saxo-token-proxy.js">
-            <button class="btn" style="font-size:9px;padding:2px 7px"
-              onclick="saxoOAuthLogin()"
-              title="Opens Saxo live login popup — PKCE via Cloudflare Worker proxy">
-              🔐 Login</button>
-            <button style="font-size:9px;padding:2px 5px;border:1px solid var(--bdr);
-              border-radius:3px;background:var(--sur2);color:var(--mut);cursor:pointer"
-              onclick="showRedirectUri()"
-              title="Show redirect URI to register in Saxo app settings">URI?</button>
-            <button style="font-size:9px;padding:2px 5px;border:1px solid var(--bdr);
-              border-radius:3px;background:var(--sur2);color:var(--ylw);cursor:pointer"
-              onclick="saxoDebugUrl()"
-              title="Show full auth URL for debugging">Debug URL</button>
-          </div>
-          <span id="saxoAuthStatusLive" style="font-size:9px;color:var(--mut)"></span>
-        </div>
+        <button class="btn" style="font-size:9px;padding:2px 7px" onclick="saxoOAuthLogin()">🔐 Login</button>
+        <span id="saxoAuthStatusLive" style="font-size:9px;color:var(--mut)"></span>
       </div>
+      <!-- IBKR placeholder -->
+      <div id="ibkrControls" style="display:none;align-items:center;gap:4px">
+        <span style="font-size:9px;color:var(--ylw)">IBKR integration coming soon</span>
+      </div>
+      <!-- OPRA message shown for Saxo and IBKR -->
+      <span id="opraMsg" style="display:none;font-size:9px;color:var(--mut);max-width:300px;line-height:1.3">
+        ⚠ Live OPRA market data requires an active subscription via your broker. Without it, prices shown may be delayed.
+      </span>
     </div>
     <div id="tickerRow" style="display:none;align-items:center;gap:4px">
       <input id="tickerInput" type="text" value="MSTR" placeholder="Ticker"
@@ -418,47 +378,6 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
         </div>
         <div style="font-size:8px;color:var(--mut);line-height:1.4">
           Vol-Correlated: each heatmap cell uses IV adjusted for the scenario spot using ρ above.
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="hd"><h3>Share Ownership (context)</h3></div>
-      <div class="bd">
-        <div class="row" style="flex-wrap:wrap;gap:4px">
-          <input type="number" id="iShares" value="700" step="100" min="0" style="width:65px" onchange="state.shares=+this.value;renderAll()">
-          <span style="color:var(--mut);font-size:10px">shares owned</span>
-        </div>
-        <div class="ctx-note" id="coveredNote">
-          700 shares → up to <strong style="color:var(--blu)">7</strong> covered call contracts without naked exposure.
-        </div>
-        <div style="font-size:9px;color:var(--mut);margin-top:5px;line-height:1.5">
-          Long-term hold — stock P&amp;L not tracked here. Shares define how many calls are <em>covered</em>.
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="hd"><h3>Cash &amp; Leverage</h3></div>
-      <div class="bd">
-        <label class="lbl">Cash Available (USD)</label>
-        <input type="number" id="iCash" value="16000" step="1000" min="0" onchange="state.cash=+this.value;renderAll()">
-        <label class="lbl" style="margin-top:7px">Leverage (for short puts)</label>
-        <div class="lev-btns" id="levBtns">
-          <button class="lev-btn on" data-lev="1"   onclick="setLev(this)">1× Cash-secured</button>
-          <button class="lev-btn"    data-lev="1.5" onclick="setLev(this)">1.5× Reg-T</button>
-          <button class="lev-btn"    data-lev="2"   onclick="setLev(this)">2× Margin</button>
-          <button class="lev-btn"    data-lev="3"   onclick="setLev(this)">3× Portfolio margin</button>
-        </div>
-        <div style="margin-top:8px">
-          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mut);margin-bottom:3px">
-            <span>Capital required</span>
-            <span id="capReqVal" style="font-family:monospace;color:var(--txt)">—</span>
-          </div>
-          <div class="budget-bar">
-            <div class="budget-fill" id="budgetFill" style="width:0%;background:var(--grn)"></div>
-          </div>
-          <div style="font-size:9px;color:var(--mut);margin-top:3px" id="budgetNote">—</div>
         </div>
       </div>
     </div>
@@ -852,6 +771,31 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
     </div>
   </div>
 
+  <!-- Greeks Dashboard -->
+  <div class="card" id="greeksCard" style="flex-shrink:0;margin-top:4px">
+    <div class="hd" style="height:auto;padding:4px 8px;gap:6px;flex-wrap:wrap">
+      <h3>Greeks vs Spot Price</h3>
+      <span style="font-size:9px;color:var(--mut)">Expiry:</span>
+      <select id="greeksExpiry" style="font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 4px" onchange="renderGreeksDashboard()">
+        <option value="all">All / Portfolio</option>
+      </select>
+      <div style="display:flex;gap:2px;margin-left:4px">
+        <button id="gfAll"  class="lev-btn on" onclick="setGreeksFilter('all')"  style="font-size:9px;padding:2px 7px">All</button>
+        <button id="gfCall" class="lev-btn"    onclick="setGreeksFilter('call')" style="font-size:9px;padding:2px 7px">Calls</button>
+        <button id="gfPut"  class="lev-btn"    onclick="setGreeksFilter('put')"  style="font-size:9px;padding:2px 7px">Puts</button>
+      </div>
+      <span style="font-size:9px;color:var(--mut);margin-left:auto">Per-contract values × 100 shares</span>
+    </div>
+    <div class="bd" style="padding:6px 8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:6px;height:280px">
+        <div style="position:relative"><canvas id="gDeltaChart"></canvas></div>
+        <div style="position:relative"><canvas id="gGammaChart"></canvas></div>
+        <div style="position:relative"><canvas id="gThetaChart"></canvas></div>
+        <div style="position:relative"><canvas id="gVegaChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /main -->
 </div><!-- /app -->
 
@@ -981,9 +925,9 @@ const state={
   smileConv:0.20,    // convexity / curvature of the smile
   liveSource:'yahoo',  // 'yahoo' | 'saxo'
   saxoToken:'',        // Saxo access token (session memory only, never persisted)
-  saxoEnv:'sim',       // 'sim' = developer.saxo SIM gateway | 'live' = real account gateway
-  saxoClientId:'',     // OAuth app client_id from developer.saxo.com → Apps
-  saxoProxyUrl:'',     // Cloudflare Worker proxy URL for token exchange (avoids CORS)
+  saxoEnv:'live',      // always use live endpoint
+  saxoClientId:'47fee9f3ee124a078fc4b4499088dec4',
+  saxoProxyUrl:'https://ancient-smoke-e85d.a-td91.workers.dev/',
   saxoContractCache:null,    // cached ATM contracts array (avoids re-discovery on auto-refresh)
   saxoContractCacheTime:0,   // ms timestamp of last cache fill
   spotVolRho:0.75,           // spot-vol elasticity: IV ∝ (S'/S)^-ρ. 0=none, 0.5=mild, 1=strong
@@ -1683,7 +1627,7 @@ function setMode(m){
   const isLive=m==='live';
   document.getElementById('modeSim').classList.toggle('on',!isLive);
   document.getElementById('modeLive').classList.toggle('on',isLive);
-  document.getElementById('modeBadge').textContent=isLive?'Live Data':'Simulation';
+  document.getElementById('modeBadge').textContent=isLive?'Real Data':'Simulation';
   document.getElementById('modeBadge').style.background=isLive?'var(--grn)':'var(--blu)';
   document.getElementById('liveSrcRow').style.display=isLive?'flex':'none';
   document.getElementById('tickerRow').style.display=isLive?'flex':'none';
@@ -1692,43 +1636,29 @@ function setMode(m){
   document.getElementById('liveStatus').style.display=isLive?'':'none';
   updateSaxoUI();
   if(!isLive){ setLiveLock(false); stopLiveTimer(); }
-  // Don't auto-fetch if Saxo live — user must login first
-  if(isLive&&!(state.liveSource==='saxo'&&state.saxoEnv==='live'&&!state.saxoToken)) fetchLiveData();
+  if(isLive&&state.liveSource==='yahoo') fetchLiveData();
 }
 
 function setLiveSource(src){
   state.liveSource=src;
   document.getElementById('srcYahoo').classList.toggle('on',src==='yahoo');
   document.getElementById('srcSaxo').classList.toggle('on',src==='saxo');
+  document.getElementById('srcIbkr').classList.toggle('on',src==='ibkr');
   updateSaxoUI();
-  // Only auto-fetch if switching to Yahoo, or if Saxo already has a token
-  if(src==='yahoo'||(src==='saxo'&&state.saxoToken)) fetchLiveData();
+  if(src==='yahoo') fetchLiveData();
+  // Saxo: user must click Login first; IBKR: not yet implemented
 }
 
 function updateSaxoUI(){
   const showSaxo=state.mode==='live'&&state.liveSource==='saxo';
+  const showIbkr=state.mode==='live'&&state.liveSource==='ibkr';
+  const showOpra=showSaxo||showIbkr;
   document.getElementById('saxoControls').style.display=showSaxo?'flex':'none';
-  if(showSaxo){
-    const isSim=state.saxoEnv==='sim';
-    document.getElementById('saxoSimUI').style.display=isSim?'flex':'none';
-    document.getElementById('saxoLiveUI').style.display=isSim?'none':'flex';
-    // Sync clientId field to state (in case user switched env)
-    if(isSim){
-      const el=document.getElementById('saxoClientIdSim');
-      if(el&&state.saxoClientId) el.value=state.saxoClientId;
-    } else {
-      const el=document.getElementById('saxoClientId');
-      if(el&&state.saxoClientId) el.value=state.saxoClientId;
-    }
-  }
+  document.getElementById('ibkrControls').style.display=showIbkr?'flex':'none';
+  document.getElementById('opraMsg').style.display=showOpra?'':'none';
 }
 
-function setSaxoEnv(env){
-  state.saxoEnv=env;
-  document.getElementById('saxoEnvSim').classList.toggle('on',env==='sim');
-  document.getElementById('saxoEnvLive').classList.toggle('on',env==='live');
-  updateSaxoUI();
-}
+function setSaxoEnv(env){ state.saxoEnv=env; } // kept for compatibility
 
 // ── OAuth 2.0 PKCE flow — full-page redirect (no popup) ──
 // Avoids all popup-blocking and cross-origin issues.
@@ -1781,10 +1711,8 @@ function showRedirectUri(){
 }
 
 async function saxoDebugUrl(){
-  const clientId=state.saxoClientId.trim();
+  const clientId=state.saxoClientId;
   const redirectUri=window.location.href.split('#')[0].split('?')[0];
-  if(!clientId){alert('Paste your app key first.');return;}
-  // Generate a real challenge so the URL is valid
   const v=genVerifier();
   const c=await genChallenge(v);
   const url=
@@ -1799,46 +1727,18 @@ async function saxoDebugUrl(){
 }
 
 function saxoAuthStatus(){
-  // Returns whichever status span is currently visible (SIM or Live)
-  const isSim=state.saxoEnv==='sim';
-  return document.getElementById(isSim?'saxoAuthStatus':'saxoAuthStatusLive');
+  return document.getElementById('saxoAuthStatusLive');
 }
 
 async function saxoOAuthLogin(){
   // PKCE flow — token exchange is proxied through a Cloudflare Worker to avoid CORS.
   // Saxo app settings: Grant type = Code / PKCE. Redirect URI = this page URL.
   // Proxy: deploy saxo-token-proxy.js to Cloudflare Workers and paste the URL below.
-  const isSim=state.saxoEnv==='sim';
-  const inputId=isSim?'saxoClientIdSim':'saxoClientId';
-  const inputEl=document.getElementById(inputId);
-  if(inputEl) state.saxoClientId=inputEl.value;
-  const clientId=state.saxoClientId.trim();
+  const isSim=false; // always live
+  const clientId=state.saxoClientId;
   const redirectUri=window.location.href.split('#')[0].split('?')[0];
   const authStatus=saxoAuthStatus();
-
-  // Read proxy URL from field if present
-  const proxyEl=document.getElementById('saxoProxyUrl');
-  if(proxyEl) state.saxoProxyUrl=proxyEl.value.trim();
   const proxyUrl=state.saxoProxyUrl;
-
-  if(!clientId){
-    alert(
-      'Enter your app key (client_id) first.\n\n'+
-      'Required settings in your Saxo live app:\n'+
-      '  Grant type: Code / PKCE\n'+
-      '  Redirect URI: '+redirectUri+'\n\n'+
-      'Also paste your Cloudflare Worker proxy URL.'
-    );
-    return;
-  }
-  if(!isSim&&!proxyUrl){
-    alert(
-      'Paste your Cloudflare Worker proxy URL.\n\n'+
-      'Deploy saxo-token-proxy.js to https://workers.cloudflare.com\n'+
-      'then paste the worker URL (e.g. https://saxo-proxy.xxx.workers.dev)'
-    );
-    return;
-  }
 
   authStatus.textContent='Opening login…';authStatus.style.color='var(--mut)';
 
@@ -1953,6 +1853,12 @@ async function fetchLiveData(){
   status.textContent='Fetching...';status.style.color='var(--mut)';
   if(state.liveSource==='saxo'){
     await fetchSaxoData(btn,status);
+    return;
+  }
+  if(state.liveSource==='ibkr'){
+    const status=document.getElementById('liveStatus');
+    if(status){ status.textContent='IBKR integration not yet available'; status.style.color='var(--ylw)'; }
+    btn.disabled=false; btn.textContent='⟳ Fetch';
     return;
   }
   try{
@@ -3323,6 +3229,8 @@ function renderAll(){
   renderRollSim();
   const lc=document.getElementById('leapContent');
   if(lc&&lc.style.display!=='none')renderLeapScanner();
+  updateGreeksExpiries();
+  renderGreeksDashboard();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3522,6 +3430,131 @@ function syncIV(v){
 function togLine(btn){
   state.lines[btn.dataset.k]=!state.lines[btn.dataset.k];
   btn.classList.toggle('on');renderChart();
+}
+
+// ═══════════════════════════════════════════════════════
+// GREEKS DASHBOARD
+// ═══════════════════════════════════════════════════════
+let _greeksCharts={};
+let _greeksFilter='all'; // 'all' | 'call' | 'put'
+
+function setGreeksFilter(f){
+  _greeksFilter=f;
+  document.getElementById('gfAll').classList.toggle('on',f==='all');
+  document.getElementById('gfCall').classList.toggle('on',f==='call');
+  document.getElementById('gfPut').classList.toggle('on',f==='put');
+  renderGreeksDashboard();
+}
+
+function updateGreeksExpiries(){
+  const sel=document.getElementById('greeksExpiry');
+  if(!sel) return;
+  const legs=state.legs;
+  const exps=[...new Set(legs.map(l=>l.exp))].sort();
+  const prev=sel.value;
+  sel.innerHTML='<option value="all">All / Portfolio</option>';
+  exps.forEach(e=>{
+    const o=document.createElement('option');
+    o.value=e; o.textContent=e;
+    sel.appendChild(o);
+  });
+  if(prev&&[...sel.options].some(o=>o.value===prev)) sel.value=prev;
+}
+
+function renderGreeksDashboard(){
+  const spot=state.spot;
+  const spots=[];
+  const lo=Math.max(1,spot*0.5), hi=spot*1.5;
+  const steps=60;
+  for(let i=0;i<=steps;i++) spots.push(lo+(hi-lo)*i/steps);
+
+  const selExp=document.getElementById('greeksExpiry')?.value||'all';
+  let legs=state.legs.filter(l=>{
+    if(selExp!=='all'&&l.exp!==selExp) return false;
+    if(_greeksFilter!=='all'&&l.type!==_greeksFilter) return false;
+    return true;
+  });
+
+  const greekSets={delta:[],gamma:[],theta:[],vega:[]};
+  for(const S of spots){
+    let d=0,g=0,th=0,v=0;
+    for(const l of legs){
+      const T=getT(l.exp);
+      if(T<=0) continue;
+      const iv=state.ivSurface==='smile'?smileIV(l.K,S,state.iv):state.iv;
+      const gr=bsAll(S,l.K,T,state.rate,iv,l.type);
+      const sign=l.action==='sell'?-1:1;
+      const n=l.qty*100*sign;
+      d+=gr.delta*n;
+      g+=gr.gamma*n;
+      th+=gr.theta*n;
+      v+=gr.vega*n;
+    }
+    greekSets.delta.push(d);
+    greekSets.gamma.push(g);
+    greekSets.theta.push(th);
+    greekSets.vega.push(v);
+  }
+
+  const labels=spots.map(s=>'$'+Math.round(s));
+
+  const cfgs=[
+    {id:'gDeltaChart',label:'Delta Δ',key:'delta',hex:'#58a6ff'},
+    {id:'gGammaChart',label:'Gamma Γ',key:'gamma',hex:'#3fb950'},
+    {id:'gThetaChart',label:'Theta Θ /day',key:'theta',hex:'#f85149'},
+    {id:'gVegaChart', label:'Vega V /1%IV',key:'vega', hex:'#bc8cff'},
+  ];
+
+  for(const cfg of cfgs){
+    const canvas=document.getElementById(cfg.id);
+    if(!canvas) continue;
+    if(_greeksCharts[cfg.id]){_greeksCharts[cfg.id].destroy();delete _greeksCharts[cfg.id];}
+    const data=greekSets[cfg.key];
+    _greeksCharts[cfg.id]=new Chart(canvas,{
+      type:'line',
+      data:{
+        labels,
+        datasets:[{
+          label:cfg.label,
+          data,
+          borderColor:cfg.hex,
+          borderWidth:2,
+          pointRadius:0,
+          fill:false,
+          tension:0.3,
+        }]
+      },
+      options:{
+        responsive:true,
+        maintainAspectRatio:false,
+        animation:false,
+        plugins:{
+          legend:{display:false},
+          tooltip:{
+            backgroundColor:'#161b22',borderColor:'#30363d',borderWidth:1,
+            titleColor:'#c9d1d9',bodyColor:'#8b949e',
+            callbacks:{
+              title:i=>`Spot: ${i[0].label}`,
+              label:i=>`${cfg.label}: ${i.raw.toFixed(3)}`,
+            }
+          },
+        },
+        scales:{
+          x:{
+            ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:6,
+              callback:(v,i)=>i%10===0?labels[i]:''},
+            grid:{color:'#21262d'},
+          },
+          y:{
+            title:{display:true,text:cfg.label,color:'#8b949e',font:{size:8}},
+            ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:5,
+              callback:v=>{const a=Math.abs(v);return(v>=0?'':'-')+(a>=1000?(a/1000).toFixed(1)+'k':a.toFixed(2));}},
+            grid:{color:'#21262d'},
+          }
+        }
+      }
+    });
+  }
 }
 
 // ═══════════════════════════════════════════════════════
