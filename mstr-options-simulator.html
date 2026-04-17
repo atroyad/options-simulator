@@ -73,11 +73,11 @@ header p{font-size:10px;color:var(--mut);}
 #hmCard .bd{flex:1;min-height:0;display:flex;flex-direction:column;gap:3px;padding:5px 8px;}
 #heatmapCanvas{display:block;cursor:crosshair;width:100%;flex:1;min-height:0;}
 
-/* Greeks: 2×2 grid, each chart 160px tall, grid scrolls if needed */
+/* Greeks: 2×2 grid, each chart cell has fixed pixel height so canvas renders */
 #greeksCard{display:flex;flex-direction:column;min-height:380px;flex:1;}
-#greeksCard .bd{padding:6px 8px;}
-.greeks-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
-.greeks-grid>div{position:relative;height:160px;}
+#greeksCard .bd{padding:6px 8px;overflow:auto;}
+.greeks-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;min-width:420px;}
+.greeks-grid>div{position:relative;height:170px;min-width:180px;}
 
 /* ── RIGHT SIDEBAR ── */
 #rightSidebar{width:300px;min-width:190px;max-width:520px;flex-shrink:0;
@@ -252,46 +252,45 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
 </head>
 <body>
 
-<header>
-  <div>
-    <h1>Options Strategy Simulator</h1>
-    <p>Options-only P&amp;L · Drag panel edges to resize</p>
-  </div>
-  <div style="display:flex;align-items:center;gap:6px;margin-left:auto;flex-wrap:wrap">
-    <span style="font-size:9px;color:var(--mut)">Mode:</span>
-    <button class="tgl on" id="modeSim"  onclick="setMode('sim')">Simulation</button>
-    <button class="tgl"    id="modeLive" onclick="setMode('live')">Real Data</button>
-    <!-- Real data source row — only shown in Real Data mode -->
+<header style="height:auto;min-height:40px;flex-wrap:wrap;padding:4px 10px;gap:4px">
+  <h1 style="font-size:13px;font-weight:600;white-space:nowrap">Options Strategy Simulator</h1>
+  <!-- Mode toggle row -->
+  <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+    <button class="tgl on" id="modeSim"  onclick="setMode('sim')" style="padding:3px 10px;font-size:10px">Simulation</button>
+    <button class="tgl"    id="modeLive" onclick="setMode('live')" style="padding:3px 10px;font-size:10px">Real Data</button>
+    <!-- Source row — only shown in Real Data mode -->
     <div id="liveSrcRow" style="display:none;align-items:center;gap:4px;flex-wrap:wrap">
-      <button class="tgl on" id="srcYahoo" onclick="setLiveSource('yahoo')" style="font-size:9px;padding:1px 6px">Delayed Yahoo</button>
-      <button class="tgl"    id="srcSaxo"  onclick="setLiveSource('saxo')"  style="font-size:9px;padding:1px 6px">Live Saxo</button>
-      <button class="tgl"    id="srcIbkr"  onclick="setLiveSource('ibkr')"  style="font-size:9px;padding:1px 6px">Live IBKR</button>
-      <!-- Saxo login controls — only shown when Saxo selected -->
+      <button class="tgl on" id="srcYahoo" onclick="setLiveSource('yahoo')" style="font-size:10px;padding:3px 8px">Yahoo (delayed)</button>
+      <button class="tgl"    id="srcSaxo"  onclick="setLiveSource('saxo')"  style="font-size:10px;padding:3px 8px">Saxo Live</button>
+      <button class="tgl"    id="srcIbkr"  onclick="setLiveSource('ibkr')"  style="font-size:10px;padding:3px 8px">IBKR Live</button>
+      <!-- Saxo login -->
       <div id="saxoControls" style="display:none;align-items:center;gap:4px;flex-wrap:wrap">
-        <button class="btn" style="font-size:9px;padding:2px 7px" onclick="saxoOAuthLogin()">🔐 Login</button>
+        <button class="btn" style="font-size:10px;padding:3px 8px" onclick="saxoOAuthLogin()">🔐 Login</button>
         <span id="saxoAuthStatusLive" style="font-size:9px;color:var(--mut)"></span>
       </div>
       <!-- IBKR placeholder -->
       <div id="ibkrControls" style="display:none;align-items:center;gap:4px">
-        <span style="font-size:9px;color:var(--ylw)">IBKR integration coming soon</span>
+        <span style="font-size:9px;color:var(--ylw)">IBKR coming soon</span>
       </div>
-      <!-- OPRA message shown for Saxo and IBKR -->
-      <span id="opraMsg" style="display:none;font-size:9px;color:var(--mut);max-width:300px;line-height:1.3">
-        ⚠ Live OPRA market data requires an active subscription via your broker. Without it, prices shown may be delayed.
+      <!-- OPRA note -->
+      <span id="opraMsg" style="display:none;font-size:9px;color:var(--mut)">
+        ⚠ Live OPRA subscription required for real-time prices.
       </span>
     </div>
+    <!-- Ticker input -->
     <div id="tickerRow" style="display:none;align-items:center;gap:4px">
       <input id="tickerInput" type="text" value="MSTR" placeholder="Ticker"
-        style="font-size:11px;padding:2px 6px;width:80px;background:var(--sur2);
+        style="font-size:11px;padding:3px 6px;width:72px;background:var(--sur2);
           border:1px solid var(--bdr);color:var(--txt);border-radius:3px;text-transform:uppercase;font-weight:700"
-        oninput="setTicker(this.value)"
-        title="Enter any US stock ticker to fetch live options data">
+        oninput="setTicker(this.value)">
     </div>
-    <button class="btn" id="liveBtn" style="display:none;font-size:10px" onclick="fetchLiveData()">⟳ Fetch</button>
-    <button class="btn" id="exportBtn" style="display:none;font-size:10px;background:var(--sur2);border:1px solid var(--bdr)" onclick="exportOptionsData()">⬇ Export for AI</button>
-    <span id="liveStatus" style="font-size:9px;color:var(--mut);display:none"></span>
+    <button class="btn" id="liveBtn" style="display:none;font-size:10px;padding:3px 8px" onclick="fetchLiveData()">⟳ Fetch</button>
+    <button class="btn" id="exportBtn" style="display:none;font-size:10px;padding:3px 8px;background:var(--sur2);border:1px solid var(--bdr)" onclick="exportOptionsData()">⬇ Export</button>
   </div>
-  <div class="badge" id="modeBadge">Simulation</div>
+  <div style="display:flex;align-items:center;gap:6px;margin-left:auto">
+    <span id="liveStatus" style="font-size:9px;color:var(--mut);display:none;max-width:200px;line-height:1.3"></span>
+    <div class="badge" id="modeBadge">Simulation</div>
+  </div>
 </header>
 
 <div class="app">
@@ -1939,23 +1938,21 @@ async function fetchLiveData(){
   }
   try{
     // ── Spot price via Yahoo Finance ──
-    // Route through proxy when on GitHub Pages (CORS), direct when on localhost
-    const proxyBase=state.saxoProxyUrl?state.saxoProxyUrl.replace(/\/$/,''):'';
-    const yahooSpotUrl=proxyBase
-      ? `${proxyBase}/yahoo?ticker=${state.ticker}`
-      : `https://query1.finance.yahoo.com/v8/finance/chart/${state.ticker}?interval=1m&range=1d`;
-    const r=await fetch(yahooSpotUrl,{cache:'no-cache'});
+    // Always route through Cloudflare Worker proxy (avoids CORS)
+    const proxyBase=state.saxoProxyUrl.replace(/\/$/,'');
+    const r=await fetch(`${proxyBase}/yahoo?ticker=${state.ticker}`,{cache:'no-cache'});
+    if(!r.ok) throw new Error(`Yahoo spot HTTP ${r.status}`);
     const d=await r.json();
-    const spot=d.chart.result[0].meta.regularMarketPrice;
+    const spot=d?.chart?.result?.[0]?.meta?.regularMarketPrice;
+    if(!spot) throw new Error('Yahoo spot: no price in response');
     syncSpot(Math.round(spot*100)/100);
 
     // ── Options chain ──
-    const yahooOptsUrl=proxyBase
-      ? `${proxyBase}/yahoo?ticker=${state.ticker}&type=options`
-      : `https://query1.finance.yahoo.com/v7/finance/options/${state.ticker}`;
-    const r2=await fetch(yahooOptsUrl,{cache:'no-cache'});
+    const r2=await fetch(`${proxyBase}/yahoo?ticker=${state.ticker}&type=options`,{cache:'no-cache'});
+    if(!r2.ok) throw new Error(`Yahoo options HTTP ${r2.status}`);
     const d2=await r2.json();
-    const chain=d2.optionChain.result[0];
+    const chain=d2?.optionChain?.result?.[0];
+    if(!chain) throw new Error('Yahoo options: no chain data returned');
     const exps=chain.expirationDates; // unix timestamps
 
     // Collect all calls + puts from the nearest expiry
@@ -1991,11 +1988,11 @@ async function fetchLiveData(){
     startLiveTimer();
     renderAll();
   }catch(e){
-    status.textContent='Failed — check network / CORS';
+    status.textContent=`Failed: ${e.message||'network error'}`;
     status.style.color='var(--red)';
     console.error('Live data error:',e);
   }
-  btn.disabled=false;
+  btn.disabled=false; btn.textContent='⟳ Fetch';
 }
 
 // ═══════════════════════════════════════════════════════
