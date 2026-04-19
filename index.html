@@ -3763,80 +3763,170 @@ function updateGreeksExpiries(){
 
 function renderGreeksDashboard(){
   const spot=state.spot;
+  const selExp=document.getElementById('greeksExpiry')?.value||'';
+  if(!selExp) return;
+
+  const useLive=state.liveOptions.length>0;
+
+  // ── Data source ──
+  // liveOptions mode: x-axis = strike, Greek computed at current spot using market IV
+  // Strategy legs mode: x-axis = spot range, portfolio Greeks summed × qty × 100
+  const srcLbl=document.getElementById('greeksSrcLabel');
+
+  if(useLive){
+    // ── LIVE MODE: strike on x-axis, one point per option ──
+    if(srcLbl) srcLbl.textContent='Per-share · x = strike · computed at current spot';
+
+    const lo=Math.max(1,+document.getElementById('gMin').value||Math.round(spot*0.5));
+    const hi=Math.max(lo+1,+document.getElementById('gMax').value||Math.round(spot*1.5));
+
+    // Get all options for selected expiry, sorted by strike
+    const callOpts=state.liveOptions
+      .filter(o=>o.exp===selExp&&o.type==='call'&&o.K>=lo&&o.K<=hi&&(_greeksFilter==='all'||_greeksFilter==='call'))
+      .sort((a,b)=>a.K-b.K);
+    const putOpts=state.liveOptions
+      .filter(o=>o.exp===selExp&&o.type==='put'&&o.K>=lo&&o.K<=hi&&(_greeksFilter==='all'||_greeksFilter==='put'))
+      .sort((a,b)=>a.K-b.K);
+
+    const T=getT(selExp);
+    if(T<=0){
+      if(srcLbl) srcLbl.textContent='Expired';
+      return;
+    }
+
+    function greekPoints(opts){
+      return {
+        labels: opts.map(o=>'$'+o.K),
+        delta:  opts.map(o=>bsAll(spot,o.K,T,state.rate,o.iv,o.type).delta),
+        gamma:  opts.map(o=>bsAll(spot,o.K,T,state.rate,o.iv,o.type).gamma),
+        theta:  opts.map(o=>bsAll(spot,o.K,T,state.rate,o.iv,o.type).theta),
+        vega:   opts.map(o=>bsAll(spot,o.K,T,state.rate,o.iv,o.type).vega),
+      };
+    }
+    const callPts=greekPoints(callOpts);
+    const putPts=greekPoints(putOpts);
+
+    // Spot line index: closest strike to current spot in merged label set
+    const allStrikes=[...new Set([...callOpts.map(o=>o.K),...putOpts.map(o=>o.K)])].sort((a,b)=>a-b);
+    const spotStrikeIdx=allStrikes.reduce((bi,K,i)=>Math.abs(K-spot)<Math.abs(allStrikes[bi]-spot)?i:bi,0);
+
+    const cfgs=[
+      {id:'gDeltaChart', label:'Delta Δ',  unit:'Δ (per share)',       callKey:'delta', putKey:'delta'},
+      {id:'gGammaChart', label:'Gamma Γ',  unit:'Γ (per share)',       callKey:'gamma', putKey:'gamma'},
+      {id:'gThetaChart', label:'Theta Θ',  unit:'Θ/day (per share $)', callKey:'theta', putKey:'theta'},
+      {id:'gVegaChart',  label:'Vega ν',   unit:'ν per 1%IV ($)',      callKey:'vega',  putKey:'vega'},
+    ];
+
+    const showCall=_greeksFilter==='all'||_greeksFilter==='call';
+    const showPut =_greeksFilter==='all'||_greeksFilter==='put';
+
+    for(const cfg of cfgs){
+      const canvas=document.getElementById(cfg.id);
+      if(!canvas) continue;
+      if(_greeksCharts[cfg.id]){_greeksCharts[cfg.id].destroy();delete _greeksCharts[cfg.id];}
+
+      const datasets=[];
+      if(showCall&&callPts.labels.length>0) datasets.push({
+        label:'Calls', data:callPts[cfg.callKey], labels:callPts.labels,
+        borderColor:'#58a6ff', backgroundColor:'rgba(88,166,255,0.08)',
+        borderWidth:1.5, pointRadius:2, pointHoverRadius:4,
+        pointBackgroundColor:'#58a6ff', fill:false, tension:0.3,
+      });
+      if(showPut&&putPts.labels.length>0) datasets.push({
+        label:'Puts', data:putPts[cfg.putKey], labels:putPts.labels,
+        borderColor:'#f85149', backgroundColor:'rgba(248,81,73,0.08)',
+        borderWidth:1.5, pointRadius:2, pointHoverRadius:4,
+        pointBackgroundColor:'#f85149', fill:false, tension:0.3,
+      });
+      if(!datasets.length){
+        _greeksCharts[cfg.id]=null; continue;
+      }
+
+      _greeksCharts[cfg.id]=new Chart(canvas,{
+        type:'line',
+        data:{
+          // Use call labels for x (wider range); puts may have different strikes
+          labels: showCall&&callPts.labels.length?callPts.labels:putPts.labels,
+          datasets,
+        },
+        options:{
+          responsive:true, maintainAspectRatio:false, animation:false,
+          plugins:{
+            legend:{display:datasets.length>1,labels:{color:'#8b949e',font:{size:8},boxWidth:8,padding:6}},
+            tooltip:{
+              backgroundColor:'#161b22',borderColor:'#30363d',borderWidth:1,
+              titleColor:'#c9d1d9',bodyColor:'#8b949e',
+              callbacks:{
+                title:i=>`Strike: ${i[0].label} · Spot: $${spot.toFixed(2)}`,
+                label:i=>{const a=Math.abs(i.raw);return`${i.dataset.label} ${cfg.label}: ${i.raw<0?'-':''}${a.toFixed(4)}`;}
+              }
+            },
+          },
+          scales:{
+            x:{
+              ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:8,autoSkip:true,maxRotation:0},
+              grid:{color:'#21262d'}, border:{color:'#30363d'},
+              title:{display:true,text:'Strike',color:'#8b949e',font:{size:7}},
+            },
+            y:{
+              title:{display:true,text:cfg.unit,color:'#8b949e',font:{size:7}},
+              ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:5,
+                callback:v=>{const a=Math.abs(v);return(v<0?'-':'')+(a>=1?a.toFixed(3):a.toFixed(4));}},
+              grid:{color:ctx=>ctx.tick.value===0?'rgba(255,255,255,0.25)':'#21262d'},
+              border:{color:'#30363d'},
+            }
+          }
+        }
+      });
+    }
+    return; // done with live mode
+  }
+
+  // ── STRATEGY LEGS MODE: spot on x-axis, portfolio Greeks ──
+  if(srcLbl) srcLbl.textContent='Portfolio (×qty ×100) · x = spot';
+
   const lo=Math.max(1,+document.getElementById('gMin').value||Math.round(spot*0.5));
   const hi=Math.max(lo+1,+document.getElementById('gMax').value||Math.round(spot*1.5));
   const steps=60;
   const spots=[];
   for(let i=0;i<=steps;i++) spots.push(lo+(hi-lo)*i/steps);
 
-  const selExp=document.getElementById('greeksExpiry')?.value||'';
-
-  // ── Data source: liveOptions (market chain) takes priority over strategy legs ──
-  const useLive=state.liveOptions.length>0;
-
-  // Build two position arrays — calls and puts — filtered by selected expiry
-  function getPositions(typeFilter){
-    const src=useLive?state.liveOptions:state.legs;
-    return src.filter(o=>{
-      if(selExp&&o.exp!==selExp) return false;
-      if(o.type!==typeFilter) return false;
+  function getLegs(typeFilter){
+    return state.legs.filter(l=>{
+      if(l.exp!==selExp) return false;
+      if(_greeksFilter!=='all'&&l.type!==typeFilter) return false;
       return true;
-    }).map(o=>useLive
-      ? {K:o.K, type:o.type, exp:o.exp, iv:o.iv, qty:1, sign:1}
-      : {K:o.K, type:o.type, exp:o.exp, iv:null, qty:o.qty, sign:o.action==='sell'?-1:1}
-    );
+    }).map(l=>({K:l.K,type:l.type,exp:l.exp,iv:null,qty:l.qty,sign:l.action==='sell'?-1:1}));
   }
+  const callLegs=getLegs('call');
+  const putLegs=getLegs('put');
 
-  const callPos=getPositions('call');
-  const putPos=getPositions('put');
-
-  // Update source label
-  const srcLbl=document.getElementById('greeksSrcLabel');
-  if(srcLbl) srcLbl.textContent=useLive?'Avg per-share across strikes':'Portfolio (×qty ×100)';
-
-  function computeGreekSeries(positions){
+  function computeLegSeries(legs){
     const sets={delta:[],gamma:[],theta:[],vega:[]};
     for(const S of spots){
-      let d=0,g=0,th=0,v=0,n=0;
-      for(const p of positions){
-        const T=getT(p.exp);
-        if(T<=0) continue;
-        const iv=p.iv!=null ? p.iv : (state.ivSurface==='smile'?smileIV(p.K,S,state.iv):state.iv);
-        const gr=bsAll(S,p.K,T,state.rate,iv,p.type);
-        if(useLive){
-          // Per-share average across all strikes at this expiry
-          d+=gr.delta; g+=gr.gamma; th+=gr.theta; v+=gr.vega; n++;
-        } else {
-          // Portfolio: sum weighted by qty × 100 × direction
-          const w=p.qty*100*p.sign;
-          d+=gr.delta*w; g+=gr.gamma*w; th+=gr.theta*w; v+=gr.vega*w; n=1;
-        }
+      let d=0,g=0,th=0,v=0;
+      for(const l of legs){
+        const T=getT(l.exp); if(T<=0) continue;
+        const iv=state.ivSurface==='smile'?smileIV(l.K,S,state.iv):state.iv;
+        const gr=bsAll(S,l.K,T,state.rate,iv,l.type);
+        const w=l.qty*100*l.sign;
+        d+=gr.delta*w; g+=gr.gamma*w; th+=gr.theta*w; v+=gr.vega*w;
       }
-      const cnt=useLive?(n||1):1;
-      sets.delta.push(d/cnt); sets.gamma.push(g/cnt); sets.theta.push(th/cnt); sets.vega.push(v/cnt);
+      sets.delta.push(d); sets.gamma.push(g); sets.theta.push(th); sets.vega.push(v);
     }
     return sets;
   }
-
-  const callSets=computeGreekSeries(callPos);
-  const putSets=computeGreekSeries(putPos);
-
+  const callSets=computeLegSeries(callLegs);
+  const putSets=computeLegSeries(putLegs);
   const labels=spots.map(s=>'$'+Math.round(s));
-  const spotIdx=Math.round(steps/2); // current spot is always in the middle
 
-  // Units depend on mode
-  const dUnit=useLive?'Δ (per share)':'Δ (portfolio)';
-  const gUnit=useLive?'Γ (per share)':'Γ (portfolio)';
-  const tUnit=useLive?'Θ/day (per share)':'Θ/day (portfolio $)';
-  const vUnit=useLive?'ν per 1%IV (per share)':'ν per 1%IV ($)';
   const cfgs=[
-    {id:'gDeltaChart',label:'Delta Δ', unit:dUnit, key:'delta'},
-    {id:'gGammaChart',label:'Gamma Γ', unit:gUnit, key:'gamma'},
-    {id:'gThetaChart',label:'Theta Θ', unit:tUnit, key:'theta'},
-    {id:'gVegaChart', label:'Vega ν',  unit:vUnit, key:'vega'},
+    {id:'gDeltaChart',label:'Delta Δ', unit:'Δ (portfolio)',       key:'delta'},
+    {id:'gGammaChart',label:'Gamma Γ', unit:'Γ (portfolio)',       key:'gamma'},
+    {id:'gThetaChart',label:'Theta Θ', unit:'Θ/day (portfolio $)', key:'theta'},
+    {id:'gVegaChart', label:'Vega ν',  unit:'ν per 1%IV ($)',      key:'vega'},
   ];
 
-  // Show/hide call/put lines based on filter
   const showCall=_greeksFilter==='all'||_greeksFilter==='call';
   const showPut =_greeksFilter==='all'||_greeksFilter==='put';
 
@@ -3846,63 +3936,47 @@ function renderGreeksDashboard(){
     if(_greeksCharts[cfg.id]){_greeksCharts[cfg.id].destroy();delete _greeksCharts[cfg.id];}
 
     const datasets=[];
-    if(showCall && callPos.length>0) datasets.push({
-      label:'Calls',
-      data:callSets[cfg.key],
-      borderColor:'#58a6ff',
-      backgroundColor:'rgba(88,166,255,0.15)',
-      borderWidth:1.5,
-      pointRadius:2,
-      pointHoverRadius:4,
-      pointBackgroundColor:'#58a6ff',
-      fill:false,
-      tension:0.3,
+    if(showCall&&callLegs.length>0) datasets.push({
+      label:'Calls', data:callSets[cfg.key],
+      borderColor:'#58a6ff', backgroundColor:'rgba(88,166,255,0.08)',
+      borderWidth:1.5, pointRadius:2, pointHoverRadius:4,
+      pointBackgroundColor:'#58a6ff', fill:false, tension:0.3,
     });
-    if(showPut && putPos.length>0) datasets.push({
-      label:'Puts',
-      data:putSets[cfg.key],
-      borderColor:'#f85149',
-      backgroundColor:'rgba(248,81,73,0.15)',
-      borderWidth:1.5,
-      pointRadius:2,
-      pointHoverRadius:4,
-      pointBackgroundColor:'#f85149',
-      fill:false,
-      tension:0.3,
+    if(showPut&&putLegs.length>0) datasets.push({
+      label:'Puts', data:putSets[cfg.key],
+      borderColor:'#f85149', backgroundColor:'rgba(248,81,73,0.08)',
+      borderWidth:1.5, pointRadius:2, pointHoverRadius:4,
+      pointBackgroundColor:'#f85149', fill:false, tension:0.3,
     });
+    if(!datasets.length){ _greeksCharts[cfg.id]=null; continue; }
 
     _greeksCharts[cfg.id]=new Chart(canvas,{
       type:'line',
       data:{labels,datasets},
       options:{
-        responsive:true,
-        maintainAspectRatio:false,
-        animation:false,
+        responsive:true, maintainAspectRatio:false, animation:false,
         plugins:{
-          legend:{
-            display:datasets.length>1,
-            labels:{color:'#8b949e',font:{size:8},boxWidth:8,padding:6},
-          },
+          legend:{display:datasets.length>1,labels:{color:'#8b949e',font:{size:8},boxWidth:8,padding:6}},
           tooltip:{
             backgroundColor:'#161b22',borderColor:'#30363d',borderWidth:1,
             titleColor:'#c9d1d9',bodyColor:'#8b949e',
             callbacks:{
               title:i=>`Spot: ${i[0].label}`,
-              label:i=>{const a=Math.abs(i.raw);return `${i.dataset.label} ${cfg.label}: ${i.raw>=0?'':'-'}${a>=1000?(a/1000).toFixed(1)+'k':a.toFixed(3)}`;}
+              label:i=>{const a=Math.abs(i.raw);return`${i.dataset.label} ${cfg.label}: ${i.raw<0?'-':''}${a>=1000?(a/1000).toFixed(1)+'k':a.toFixed(3)}`;}
             }
           },
         },
         scales:{
           x:{
             ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:7,autoSkip:true,maxRotation:0},
-            grid:{color:'#21262d'},
-            border:{color:'#30363d'},
+            grid:{color:'#21262d'}, border:{color:'#30363d'},
+            title:{display:true,text:'Spot price',color:'#8b949e',font:{size:7}},
           },
           y:{
-            title:{display:true,text:cfg.unit,color:'#8b949e',font:{size:8}},
+            title:{display:true,text:cfg.unit,color:'#8b949e',font:{size:7}},
             ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:5,
-              callback:v=>{const a=Math.abs(v);return(v>=0?'':'-')+(a>=1000?(a/1000).toFixed(1)+'k':a.toFixed(3));}},
-            grid:{color:ctx=>(ctx.tick.value===0?'rgba(255,255,255,0.2)':'#21262d')},
+              callback:v=>{const a=Math.abs(v);return(v<0?'-':'')+(a>=1000?(a/1000).toFixed(1)+'k':a.toFixed(3));}},
+            grid:{color:ctx=>ctx.tick.value===0?'rgba(255,255,255,0.25)':'#21262d'},
             border:{color:'#30363d'},
           }
         }
