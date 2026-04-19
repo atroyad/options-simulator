@@ -205,7 +205,9 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
   transition:color .1s;}
 .sb-tab:hover{color:var(--txt);}
 .sb-tab.on{color:var(--blu);border-bottom-color:var(--blu);font-weight:700;}
-.sb-pane{flex:1;overflow:auto;display:flex;flex-direction:column;gap:5px;padding:6px;}
+.sb-pane{flex:1;overflow:auto;display:flex;flex-direction:column;gap:5px;padding:6px;min-width:210px;}
+#sidebar{overflow:auto;}
+#sidebar .sb-pane{flex:none;min-height:100%;}/* let sidebar own both scroll axes */
 
 /* ── BUILDER TABS ── */
 .tab-btn{padding:2px 10px;border:none;border-bottom:2px solid transparent;
@@ -595,11 +597,19 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
           <select id="smileExpiry" style="font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 4px" onchange="renderSmileChart()">
             <option value="">— all —</option>
           </select>
-          <span style="font-size:9px;color:var(--mut)">· Model:</span>
-          <span style="font-size:9px">Skew <span id="smileInfoSkew" style="color:var(--blu);font-family:monospace">-0.12</span></span>
-          <span style="font-size:9px">Conv <span id="smileInfoConv" style="color:var(--blu);font-family:monospace">0.20</span></span>
+          <span style="font-size:9px;color:var(--mut)">· Model (edit to fit):</span>
+          <span style="font-size:9px;white-space:nowrap">Skew
+            <input id="smileSkewOverride" type="number" step="0.01" min="-1" max="0.5"
+              style="width:46px;font-size:9px;font-family:monospace;background:var(--sur2);border:1px solid var(--bdr);color:var(--blu);border-radius:3px;padding:1px 3px;text-align:right"
+              oninput="state.smileSkew=+this.value;document.getElementById('smileSkewIn').value=this.value;document.getElementById('smileSkewVal').textContent=(+this.value).toFixed(2);renderSmileChart()">
+          </span>
+          <span style="font-size:9px;white-space:nowrap">Conv
+            <input id="smileConvOverride" type="number" step="0.01" min="0" max="2"
+              style="width:46px;font-size:9px;font-family:monospace;background:var(--sur2);border:1px solid var(--bdr);color:var(--blu);border-radius:3px;padding:1px 3px;text-align:right"
+              oninput="state.smileConv=+this.value;document.getElementById('smileConvIn').value=this.value;document.getElementById('smileConvVal').textContent=(+this.value).toFixed(2);renderSmileChart()">
+          </span>
           <span id="smileFitBadge" style="display:none;font-size:8px;padding:1px 5px;border-radius:6px;
-            background:var(--grn);color:#000;font-weight:700">Live-fitted</span>
+            background:var(--grn);color:#000;font-weight:700">Auto-fitted</span>
         </div>
         <!-- Fixed toggles — hidden in smile view -->
         <div class="tgls" id="pnlControls" style="flex:1;min-width:0">
@@ -943,7 +953,7 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
             </tr>
           </thead>
           <tbody id="pricesBody">
-            <tr><td colspan="12" style="padding:12px;text-align:center;color:var(--mut)">Load live data to see option prices</td></tr>
+            <tr><td colspan="12" style="padding:12px;text-align:center;color:var(--mut)">Select an expiry to see simulated prices</td></tr>
           </tbody>
         </table>
       </div>
@@ -1162,6 +1172,11 @@ function applySmileParams(p){
   const cvEl=document.getElementById('smileConvIn');
   if(skEl){skEl.value=p.skew;document.getElementById('smileSkewVal').textContent=p.skew.toFixed(2);}
   if(cvEl){cvEl.value=p.conv;document.getElementById('smileConvVal').textContent=p.conv.toFixed(2);}
+  // Keep inline override inputs in sync
+  const skOvr=document.getElementById('smileSkewOverride');
+  const cvOvr=document.getElementById('smileConvOverride');
+  if(skOvr) skOvr.value=p.skew.toFixed(2);
+  if(cvOvr) cvOvr.value=p.conv.toFixed(2);
 }
 
 // Color palette for custom day lines — cycles through these
@@ -1400,12 +1415,95 @@ function setPriceFilter(f){
   renderPricesTable();
 }
 
+// Generate standard option expiry dates (3rd Friday of each month) for the next N months
+function stdExpiries(nMonths){
+  const exps=[];
+  const now=new Date();
+  for(let m=0;m<nMonths;m++){
+    const d=new Date(now.getFullYear(),now.getMonth()+m,1);
+    // Find 3rd Friday
+    let fri=0;
+    for(let day=1;day<=31;day++){
+      const t=new Date(d.getFullYear(),d.getMonth(),day);
+      if(t.getMonth()!==d.getMonth()) break;
+      if(t.getDay()===5){fri++;if(fri===3){exps.push(t);break;}}
+    }
+  }
+  // Filter to only future dates (≥ 1 day away)
+  return exps.filter(e=>e-now>86400000).map(e=>e.toISOString().slice(0,10));
+}
+
+// Generate a strike grid centred on spot for a given spot price
+function simStrikeGrid(S){
+  const step=S>400?25:S>150?5:S>50?2.5:1;
+  const lo=Math.max(step,Math.round(S*0.4/step)*step);
+  const hi=Math.round(S*2.5/step)*step;
+  const strikes=[];
+  for(let k=lo;k<=hi;k+=step) strikes.push(+k.toFixed(2));
+  return strikes;
+}
+
 function renderPricesTable(){
   const tbody=document.getElementById('pricesBody');
   const expirySelect=document.getElementById('pcExpiry');
   const note=document.getElementById('pcLiveNote');
   if(!tbody) return;
 
+  // ── SIM MODE: generate synthetic prices ──
+  if(state.mode==='sim'){
+    const allExps=stdExpiries(24);
+    const curExp=expirySelect.value;
+    expirySelect.innerHTML=allExps.map(e=>`<option value="${e}"${e===curExp?'selected':''}>${e}${dteSuffix(e)}</option>`).join('');
+    if(!expirySelect.value&&allExps.length) expirySelect.value=allExps[0];
+    const selExp=expirySelect.value;
+    if(note) note.textContent='Simulated · BS model';
+
+    const S=state.spot;
+    const strikes=simStrikeGrid(S);
+    const T=Math.max(1/365,getT(selExp));
+    const rows=[];
+    for(const K of strikes){
+      for(const type of ['call','put']){
+        if(_priceFilter!=='all'&&_priceFilter!==type) continue;
+        const iv=state.ivSurface==='smile'?smileIV(K,S,atmIV(T)):atmIV(T);
+        const bs=bsAll(S,K,T,state.rate,iv,type);
+        if(bs.price<0.005) continue; // skip near-zero value options
+        rows.push({K,type,exp:selExp,iv,price:bs.price,delta:bs.delta,gamma:bs.gamma,theta:bs.theta,vega:bs.vega,sim:true});
+      }
+    }
+    _priceRows=rows;
+    const spot=S;
+    tbody.innerHTML=rows.map((o,idx)=>{
+      const moneyness=o.type==='call'?(spot-o.K)/spot*100:(o.K-spot)/spot*100;
+      const itm=moneyness>0;
+      const atmish=Math.abs(o.K-spot)/spot<0.04;
+      const rowBg=atmish?'background:var(--sur2)':'';
+      const typeColor=o.type==='call'?'var(--grn)':'var(--red)';
+      const theta_day=o.theta; // bsAll already per day
+      const vega_pct=o.vega;   // bsAll already per 1%
+      return `<tr style="${rowBg};border-bottom:1px solid var(--bdr)20">
+        <td style="padding:2px 5px;color:${typeColor};font-weight:600">${o.type.toUpperCase()[0]}</td>
+        <td style="padding:2px 5px;color:var(--mut);font-size:8px">sim</td>
+        <td style="padding:2px 5px;text-align:right;color:${itm?'var(--ylw)':'var(--txt)'};${itm?'font-weight:600':''}">${o.K}</td>
+        <td style="padding:2px 5px;text-align:right;color:var(--mut)">—</td>
+        <td style="padding:2px 5px;text-align:right;color:var(--mut)">—</td>
+        <td style="padding:2px 5px;text-align:right;color:var(--txt)">${o.price.toFixed(2)}</td>
+        <td style="padding:2px 5px;text-align:right;color:var(--blu)">${(o.iv*100).toFixed(0)}%</td>
+        <td style="padding:2px 5px;text-align:right;color:var(--mut)">${o.delta.toFixed(2)}</td>
+        <td style="padding:2px 5px;text-align:right;color:var(--red)">${(theta_day*100).toFixed(2)}¢</td>
+        <td style="padding:2px 5px;text-align:right;color:var(--mut)">${vega_pct.toFixed(2)}</td>
+        <td style="padding:2px 5px;text-align:right;color:var(--mut)">—</td>
+        <td style="padding:2px 5px">
+          <button onclick="addLegFromPrice(${idx})"
+            style="font-size:8px;padding:1px 5px;border:1px solid var(--bdr);border-radius:2px;background:var(--sur2);color:var(--txt);cursor:pointer">+</button>
+        </td>
+      </tr>`;
+    }).join('');
+    if(!rows.length) tbody.innerHTML='<tr><td colspan="12" style="padding:12px;text-align:center;color:var(--mut)">No options generated</td></tr>';
+    return;
+  }
+
+  // ── LIVE MODE: show real market data ──
   const opts=state.liveOptions;
   if(!opts||opts.length===0){
     tbody.innerHTML='<tr><td colspan="12" style="padding:12px;text-align:center;color:var(--mut)">Load live data to see option prices</td></tr>';
@@ -1485,7 +1583,7 @@ function addLegFromPrice(idx){
   if(fType) fType.value=o.type;
   if(fAction) fAction.value='sell';
   if(fStrike) fStrike.value=o.K;
-  if(fPrem) fPrem.value=o.mid?o.mid.toFixed(2):'';
+  if(fPrem) fPrem.value=(o.mid||o.price||0)>0?(o.mid||o.price).toFixed(2):'';
   if(fExpiry&&o.exp) fExpiry.value=o.exp;
   if(!formOpen) toggleForm(); else fAutoPrice();
 }
@@ -2486,6 +2584,11 @@ function setChartView(v){
     document.getElementById('smileInfoConv').textContent=state.smileConv.toFixed(2);
     const fitBadge=document.getElementById('smileFitBadge');
     if(fitBadge) fitBadge.style.display=state.mode==='live'?'':'none';
+    // Sync inline override inputs to current model params
+    const skOvr=document.getElementById('smileSkewOverride');
+    const cvOvr=document.getElementById('smileConvOverride');
+    if(skOvr) skOvr.value=state.smileSkew.toFixed(2);
+    if(cvOvr) cvOvr.value=state.smileConv.toFixed(2);
   }
   document.getElementById('chartTitle').textContent=
     isPnl?`Options P&L vs ${state.ticker||'Spot'} Price`:'Implied Volatility vs Strike (Vol Smile)';
@@ -3597,6 +3700,8 @@ function renderAll(){
   reRenderActiveViews();
   renderRollSim();
   updateGreeksExpiries();
+  // Refresh prices table if visible (sim: re-generates prices; live: no-op unless data loaded)
+  if(document.querySelector('#rightSidebar .sb-tab[data-tab="prices"]')?.classList.contains('on')) renderPricesTable();
 }
 
 // ── Center view management ──
