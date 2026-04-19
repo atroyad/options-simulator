@@ -684,6 +684,31 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
           <button id="gfPut"  class="lev-btn"    onclick="setGreeksFilter('put')"  style="font-size:9px;padding:2px 7px">Puts</button>
         </div>
         <span id="greeksSrcLabel" style="font-size:8px;color:var(--mut);margin-left:auto;font-style:italic"></span>
+        <button onclick="toggleComparePanel()" style="font-size:9px;padding:2px 7px;background:var(--sur2);border:1px solid var(--bdr);border-radius:3px;color:var(--txt);cursor:pointer;white-space:nowrap">⇌ Compare stocks</button>
+      </div>
+      <!-- Compare panel -->
+      <div id="comparePanel" style="display:none;padding:4px 8px 6px;border-top:1px solid var(--bdr);font-size:9px;color:var(--mut)">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
+          <span>Upload exported JSON files to overlay Greeks (moneyness x-axis, normalized by spot):</span>
+          <input type="file" id="compareFileInput" accept=".json" multiple
+            style="font-size:9px;color:var(--txt)"
+            onchange="loadCompareFiles(this.files)">
+          <span style="white-space:nowrap">DTE:
+            <input type="number" id="compareDTE" value="7" min="1" max="730" step="1"
+              style="width:42px;font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 3px"
+              oninput="renderGreeksComparison()">d
+          </span>
+          <button onclick="clearCompareFiles()" style="font-size:9px;padding:1px 6px;background:var(--sur2);border:1px solid var(--bdr);border-radius:3px;color:var(--mut);cursor:pointer">Clear</button>
+        </div>
+        <div id="compareStatus" style="font-size:8px;color:var(--mut);margin-bottom:4px"></div>
+        <div id="compareCharts" style="display:none">
+          <div class="greeks-grid">
+            <div><canvas id="cmpDeltaChart"></canvas></div>
+            <div><canvas id="cmpGammaChart"></canvas></div>
+            <div><canvas id="cmpThetaChart"></canvas></div>
+            <div><canvas id="cmpVegaChart"></canvas></div>
+          </div>
+        </div>
       </div>
       <div class="bd" style="padding:4px 8px 6px">
         <!-- Hidden inputs read by renderGreeksDashboard -->
@@ -1106,6 +1131,12 @@ const rsState={type:'call', action:'buy', K0:160, prem0:2.20, S1:150, iv1:120, d
 function getT(exp){
   return Math.max(0,(new Date(exp+'T21:00:00')-state.simDate)/(1000*60*60*24*365));
 }
+function dteSuffix(exp){
+  // Returns e.g. " (7d)" or " (0d)" for same-day
+  const ms=new Date(exp+'T21:00:00')-new Date();
+  const d=Math.max(0,Math.round(ms/(1000*60*60*24)));
+  return ` (${d}d)`;
+}
 // Entry price of a leg (stored or computed at current params)
 function entryPx(leg){
   return leg.prem??bsPrice(state.spot,leg.K,getT(leg.exp),state.rate,state.iv,leg.type);
@@ -1324,7 +1355,7 @@ function renderPricesTable(){
   const expiries=[...new Set(opts.map(o=>o.exp))].sort();
   const curExp=expirySelect.value;
   expirySelect.innerHTML='<option value="all">All expiries</option>'+
-    expiries.map(e=>`<option value="${e}"${e===curExp?'selected':''}>${e}</option>`).join('');
+    expiries.map(e=>`<option value="${e}"${e===curExp?'selected':''}>${e}${dteSuffix(e)}</option>`).join('');
 
   const selExp=expirySelect.value;
   let rows=opts.filter(o=>
@@ -2454,8 +2485,9 @@ function scenarioIV(l,S){
 function renderSmileChart(){
   const S=state.spot,iv=state.iv;
   const step=S>300?10:5;
-  const lo=Math.round(S*0.50/step)*step;
-  const hi=Math.round(S*1.55/step)*step;
+  // Use the shared P&L/Smile x-range sliders
+  const lo=Math.round(Math.max(1,+document.getElementById('rMin').value)/step)*step;
+  const hi=Math.round(Math.max(lo+step,+document.getElementById('rMax').value)/step)*step;
   const strikes=[];
   for(let k=lo;k<=hi;k+=step)strikes.push(k);
 
@@ -3085,8 +3117,8 @@ function renderHeatmap(){
   const PAD_B=14,PAD_L=26;
   const COLS=70,ROWS=Math.max(6,Math.floor((ch-PAD_B)/7));
   const cW=(cw-PAD_L)/COLS,rH=(ch-PAD_B)/ROWS;
-  const lo=Math.max(1,+document.getElementById('hmMin').value||1);
-  const hi=Math.max(lo+1,+document.getElementById('hmMax').value||lo+1);
+  const lo=Math.max(1,_hmLo);
+  const hi=Math.max(lo+1,_hmHi);
   const maxDays=Math.max(30,...state.legs.map(l=>getT(l.exp)*365));
   const hasVolCorr=state.hmVolCorr&&(state.spotVolRho||0)>0.01;
 
@@ -3260,26 +3292,23 @@ function renderHeatmap(){
     e.preventDefault();
     const rect=canvas.getBoundingClientRect();
     const frac=Math.max(0,Math.min(1,(e.clientX-rect.left-PAD_L)/((cw-PAD_L)||1)));
-    const pivot=lo+frac*(hi-lo);
+    const pivot=_hmLo+frac*(_hmHi-_hmLo);
     const factor=e.deltaY>0?1.1:0.9;
-    updateHmSliderUI(Math.max(1,Math.round(pivot-(pivot-lo)*factor)), Math.max(lo+1,Math.round(pivot+(hi-pivot)*factor)));
+    updateHmSliderUI(Math.max(1,Math.round(pivot-(pivot-_hmLo)*factor)),Math.round(pivot+(_hmHi-pivot)*factor));
     scheduleHeatmap();
   };
-
   // ── Click+drag to pan ──
-  let _hmDragX=null,_hmDragLo=null,_hmDragHi=null;
-  canvas.onmousedown=e=>{_hmDragX=e.clientX;_hmDragLo=lo;_hmDragHi=hi;};
+  let _hmDragX=null,_hmDragLo0=null,_hmDragHi0=null;
+  canvas.onmousedown=e=>{_hmDragX=e.clientX;_hmDragLo0=_hmLo;_hmDragHi0=_hmHi;};
   canvas.onmouseup=()=>{_hmDragX=null;};
   canvas.onmouseleave=()=>{_hmDragX=null;};
   const _hmOldMove=canvas.onmousemove;
   canvas.onmousemove=e=>{
     _hmOldMove(e);
     if(_hmDragX===null||!(e.buttons&1)) return;
-    const dx=_hmDragX-e.clientX;
-    const range=_hmDragHi-_hmDragLo;
-    const shift=Math.round(dx/((cw-PAD_L)||1)*range);
-    const newLo=Math.max(1,_hmDragLo+shift);
-    updateHmSliderUI(newLo, newLo+range);
+    const range=_hmDragHi0-_hmDragLo0;
+    const shift=Math.round((_hmDragX-e.clientX)/((cw-PAD_L)||1)*range);
+    updateHmSliderUI(Math.max(1,_hmDragLo0+shift),_hmDragLo0+shift+range);
     scheduleHeatmap();
   };
 }
@@ -3656,54 +3685,60 @@ function loadPreset(name){
 // ═══════════════════════════════════════════════════════
 // CONTROLS
 // ═══════════════════════════════════════════════════════
+// ── Range state — module-level vars (more reliable than DOM hidden inputs) ──
+let _hmLo=100,_hmHi=400;
+let _gLo=100,_gHi=400;
+
 function updateHmSliderUI(lo,hi){
-  lo=Math.max(1,Math.round(lo)); hi=Math.max(lo+1,Math.round(hi));
-  document.getElementById('hmMin').value=lo;
-  document.getElementById('hmMax').value=hi;
-  document.getElementById('hmMinSlider').value=lo;
-  document.getElementById('hmMaxSlider').value=hi;
-  document.getElementById('hmMinLabel').textContent='$'+lo;
-  document.getElementById('hmMaxLabel').textContent='$'+hi;
+  _hmLo=Math.max(1,Math.round(lo)); _hmHi=Math.max(_hmLo+1,Math.round(hi));
+  const minEl=document.getElementById('hmMinSlider');
+  const maxEl=document.getElementById('hmMaxSlider');
+  if(minEl){minEl.min=1;minEl.max=Math.max(4999,_hmHi-1);minEl.value=_hmLo;}
+  if(maxEl){maxEl.min=Math.max(2,_hmLo+1);maxEl.max=50000;maxEl.value=_hmHi;}
+  const minL=document.getElementById('hmMinLabel');
+  const maxL=document.getElementById('hmMaxLabel');
+  if(minL) minL.textContent='$'+_hmLo;
+  if(maxL) maxL.textContent='$'+_hmHi;
 }
 function onHmRangeSlider(which,val){
   val=+val;
-  let lo=+document.getElementById('hmMin').value;
-  let hi=+document.getElementById('hmMax').value;
-  if(which==='min') lo=Math.min(val,hi-10);
-  else               hi=Math.max(val,lo+10);
-  updateHmSliderUI(lo,hi);
+  if(which==='min') _hmLo=Math.min(val,_hmHi-10);
+  else              _hmHi=Math.max(val,_hmLo+10);
+  updateHmSliderUI(_hmLo,_hmHi);
   scheduleHeatmap();
 }
 function initHmRange(){
   const s=state.spot;
-  const lo=+document.getElementById('hmMin').value;
-  const hi=+document.getElementById('hmMax').value;
-  if(lo===100&&hi===400||s<lo||s>hi){
-    const newLo=Math.max(1,Math.round(s*0.5)), newHi=Math.round(s*1.5);
-    updateHmSliderUI(newLo,newHi);
-    updateGreeksSliderUI(newLo,newHi);
+  if((_hmLo===100&&_hmHi===400)||s<_hmLo||s>_hmHi){
+    _hmLo=Math.max(1,Math.round(s*0.5));
+    _hmHi=Math.round(s*1.5);
+    _gLo=_hmLo; _gHi=_hmHi;
   }
+  updateHmSliderUI(_hmLo,_hmHi);
+  updateGreeksSliderUI(_gLo,_gHi);
 }
 function updateGreeksSliderUI(lo,hi){
-  lo=Math.max(1,Math.round(lo)); hi=Math.max(lo+1,Math.round(hi));
-  document.getElementById('gMin').value=lo;
-  document.getElementById('gMax').value=hi;
-  document.getElementById('gMinSlider').value=lo;
-  document.getElementById('gMaxSlider').value=hi;
-  document.getElementById('gMinLabel').textContent='$'+lo;
-  document.getElementById('gMaxLabel').textContent='$'+hi;
+  _gLo=Math.max(1,Math.round(lo)); _gHi=Math.max(_gLo+1,Math.round(hi));
+  const minEl=document.getElementById('gMinSlider');
+  const maxEl=document.getElementById('gMaxSlider');
+  if(minEl){minEl.min=1;minEl.max=Math.max(4999,_gHi-1);minEl.value=_gLo;}
+  if(maxEl){maxEl.min=Math.max(2,_gLo+1);maxEl.max=50000;maxEl.value=_gHi;}
+  const minL=document.getElementById('gMinLabel');
+  const maxL=document.getElementById('gMaxLabel');
+  if(minL) minL.textContent='$'+_gLo;
+  if(maxL) maxL.textContent='$'+_gHi;
 }
 function onGreeksRangeSlider(which,val){
   val=+val;
-  let lo=+document.getElementById('gMin').value;
-  let hi=+document.getElementById('gMax').value;
-  if(which==='min') lo=Math.min(val,hi-10);
-  else               hi=Math.max(val,lo+10);
-  updateGreeksSliderUI(lo,hi);
+  if(which==='min') _gLo=Math.min(val,_gHi-10);
+  else              _gHi=Math.max(val,_gLo+10);
+  updateGreeksSliderUI(_gLo,_gHi);
   renderGreeksDashboard();
 }
 function resetGreeksRange(){
-  updateGreeksSliderUI(Math.max(1,Math.round(state.spot*0.5)),Math.round(state.spot*1.5));
+  _gLo=Math.max(1,Math.round(state.spot*0.5));
+  _gHi=Math.round(state.spot*1.5);
+  updateGreeksSliderUI(_gLo,_gHi);
   renderGreeksDashboard();
 }
 function syncSpot(v){
@@ -3753,7 +3788,7 @@ function updateGreeksExpiries(){
   }
   exps.forEach(e=>{
     const o=document.createElement('option');
-    o.value=e; o.textContent=e;
+    o.value=e; o.textContent=e+dteSuffix(e);
     sel.appendChild(o);
   });
   // Keep previous selection if still valid; otherwise default to first expiry
@@ -3777,8 +3812,8 @@ function renderGreeksDashboard(){
     // ── LIVE MODE: strike on x-axis, one point per option ──
     if(srcLbl) srcLbl.textContent='Per-share · x = strike · computed at current spot';
 
-    const lo=Math.max(1,+document.getElementById('gMin').value||Math.round(spot*0.5));
-    const hi=Math.max(lo+1,+document.getElementById('gMax').value||Math.round(spot*1.5));
+    const lo=Math.max(1,_gLo||Math.round(spot*0.5));
+    const hi=Math.max(lo+1,_gHi||Math.round(spot*1.5));
 
     // Get all options for selected expiry, sorted by strike
     const callOpts=state.liveOptions
@@ -3885,8 +3920,8 @@ function renderGreeksDashboard(){
   // ── STRATEGY LEGS MODE: spot on x-axis, portfolio Greeks ──
   if(srcLbl) srcLbl.textContent='Portfolio (×qty ×100) · x = spot';
 
-  const lo=Math.max(1,+document.getElementById('gMin').value||Math.round(spot*0.5));
-  const hi=Math.max(lo+1,+document.getElementById('gMax').value||Math.round(spot*1.5));
+  const lo=Math.max(1,_gLo||Math.round(spot*0.5));
+  const hi=Math.max(lo+1,_gHi||Math.round(spot*1.5));
   const steps=60;
   const spots=[];
   for(let i=0;i<=steps;i++) spots.push(lo+(hi-lo)*i/steps);
@@ -3976,6 +4011,152 @@ function renderGreeksDashboard(){
             title:{display:true,text:cfg.unit,color:'#8b949e',font:{size:7}},
             ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:5,
               callback:v=>{const a=Math.abs(v);return(v<0?'-':'')+(a>=1000?(a/1000).toFixed(1)+'k':a.toFixed(3));}},
+            grid:{color:ctx=>ctx.tick.value===0?'rgba(255,255,255,0.25)':'#21262d'},
+            border:{color:'#30363d'},
+          }
+        }
+      }
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// CROSS-STOCK GREEKS COMPARISON
+// ═══════════════════════════════════════════════════════
+const _compareStocks=[]; // [{ticker, spot, chain}]
+const _cmpCharts={};
+const _CMP_COLORS=['#58a6ff','#3fb950','#f78166','#d2a8ff','#ffa657','#79c0ff','#56d364','#ff7b72'];
+
+function toggleComparePanel(){
+  const p=document.getElementById('comparePanel');
+  if(p) p.style.display=p.style.display==='none'?'':'none';
+}
+
+function clearCompareFiles(){
+  _compareStocks.length=0;
+  document.getElementById('compareFileInput').value='';
+  document.getElementById('compareStatus').textContent='';
+  document.getElementById('compareCharts').style.display='none';
+  Object.keys(_cmpCharts).forEach(k=>{if(_cmpCharts[k]){_cmpCharts[k].destroy();delete _cmpCharts[k];}});
+}
+
+async function loadCompareFiles(files){
+  _compareStocks.length=0;
+  const statusEl=document.getElementById('compareStatus');
+  statusEl.textContent='Loading…';
+  const loaded=[];
+  for(const f of files){
+    try{
+      const txt=await f.text();
+      const d=JSON.parse(txt);
+      // Expected format: {ticker, spot, chain:{exp:{calls:[{K,iv}], puts:[{K,iv}]}}}
+      if(d.spot&&d.chain) loaded.push({ticker:d.ticker||f.name.replace('.json',''),spot:+d.spot,chain:d.chain});
+      else statusEl.textContent+=` [${f.name}: missing spot/chain]`;
+    }catch(e){ statusEl.textContent+=` [${f.name}: parse error]`; }
+  }
+  _compareStocks.push(...loaded);
+  if(_compareStocks.length===0){ statusEl.textContent='No valid files loaded.'; return; }
+  statusEl.textContent=`Loaded: ${_compareStocks.map(s=>s.ticker).join(', ')}`;
+  renderGreeksComparison();
+}
+
+function renderGreeksComparison(){
+  const targetDTE=+(document.getElementById('compareDTE')?.value||7);
+  const chartsDiv=document.getElementById('compareCharts');
+  if(!_compareStocks.length||!chartsDiv) return;
+
+  // Build moneyness grid 0.4 … 2.0 in steps of 0.025
+  const mLo=0.40, mHi=2.00, mStep=0.025;
+  const moneyness=[];
+  for(let m=mLo;m<=mHi+0.001;m+=mStep) moneyness.push(+m.toFixed(3));
+  const T=targetDTE/365;
+
+  const cfgs=[
+    {id:'cmpDeltaChart',label:'Delta Δ',      unit:'Δ (norm)',       key:'delta',  norm:(v,S)=>v},
+    {id:'cmpGammaChart',label:'Gamma Γ',      unit:'Γ × Spot',       key:'gamma',  norm:(v,S)=>v*S},
+    {id:'cmpThetaChart',label:'Theta Θ/day',  unit:'Θ/S per day',    key:'theta',  norm:(v,S)=>v/S},
+    {id:'cmpVegaChart', label:'Vega ν',        unit:'ν/S per 1%IV',   key:'vega',   norm:(v,S)=>v/S},
+  ];
+
+  chartsDiv.style.display='';
+
+  for(const cfg of cfgs){
+    const canvas=document.getElementById(cfg.id);
+    if(!canvas) continue;
+    if(_cmpCharts[cfg.id]){_cmpCharts[cfg.id].destroy();delete _cmpCharts[cfg.id];}
+
+    const datasets=[];
+    _compareStocks.forEach((stk,si)=>{
+      const S=stk.spot;
+      // Find expiry closest to target DTE
+      const exps=Object.keys(stk.chain).sort();
+      let bestExp=exps[0], bestDiff=Infinity;
+      for(const e of exps){
+        const d=Math.abs((new Date(e+'T21:00:00')-new Date())/(86400000)-targetDTE);
+        if(d<bestDiff){bestDiff=d;bestExp=e;}
+      }
+      const expData=stk.chain[bestExp];
+      const actualDTE=Math.round((new Date(bestExp+'T21:00:00')-new Date())/86400000);
+
+      // Build IV lookup: for each type, K→iv (as fraction 0-5)
+      const ivLookup={call:{},put:{}};
+      for(const o of (expData?.calls||[])) ivLookup.call[o.K]=o.iv/100;
+      for(const o of (expData?.puts ||[])) ivLookup.put[o.K] =o.iv/100;
+
+      // For each moneyness point, find nearest actual strike and compute Greek
+      ['call','put'].forEach(type=>{
+        const strikes=Object.keys(ivLookup[type]).map(Number).sort((a,b)=>a-b);
+        if(!strikes.length) return;
+        const color=_CMP_COLORS[(si*2+(type==='put'?1:0))%_CMP_COLORS.length];
+        const data=moneyness.map(m=>{
+          const K=m*S;
+          // Find nearest strike
+          let best=strikes[0],bestD=Infinity;
+          for(const sk of strikes){const d=Math.abs(sk-K);if(d<bestD){bestD=d;best=sk;}}
+          if(bestD>S*0.15) return null; // too far, skip
+          const iv=ivLookup[type][best];
+          if(!iv||iv<0.01) return null;
+          const gr=bsAll(S,best,T,0.045,iv,type);
+          return +cfg.norm(gr[cfg.key],S).toFixed(5);
+        });
+        datasets.push({
+          label:`${stk.ticker} ${type}s (${actualDTE}d)`,
+          data, borderColor:color,
+          backgroundColor:color+'22',
+          borderWidth:1.5, pointRadius:0, pointHoverRadius:3,
+          fill:false, tension:0.3,
+          borderDash:type==='put'?[4,2]:undefined,
+        });
+      });
+    });
+
+    const labels=moneyness.map(m=>m.toFixed(2)+'×');
+    _cmpCharts[cfg.id]=new Chart(canvas,{
+      type:'line',
+      data:{labels,datasets},
+      options:{
+        responsive:true, maintainAspectRatio:false, animation:false,
+        plugins:{
+          legend:{display:true,labels:{color:'#8b949e',font:{size:8},boxWidth:8,padding:4}},
+          tooltip:{
+            backgroundColor:'#161b22',borderColor:'#30363d',borderWidth:1,
+            titleColor:'#c9d1d9',bodyColor:'#8b949e',
+            callbacks:{
+              title:i=>`K/S = ${i[0].label}`,
+              label:i=>`${i.dataset.label}: ${i.raw===null?'—':i.raw.toFixed(4)}`,
+            }
+          },
+        },
+        scales:{
+          x:{
+            ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:9,autoSkip:true,maxRotation:0},
+            grid:{color:'#21262d'},border:{color:'#30363d'},
+            title:{display:true,text:'Moneyness K/S',color:'#8b949e',font:{size:7}},
+          },
+          y:{
+            title:{display:true,text:cfg.unit,color:'#8b949e',font:{size:7}},
+            ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:5,
+              callback:v=>v===null?'':v.toFixed(3)},
             grid:{color:ctx=>ctx.tick.value===0?'rgba(255,255,255,0.25)':'#21262d'},
             border:{color:'#30363d'},
           }
