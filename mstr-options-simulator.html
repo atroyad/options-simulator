@@ -559,6 +559,7 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
       <button class="pnav-btn on" id="p1pnl"     onclick="setCenterView(1,'pnl')">P&amp;L / Smile</button>
       <button class="pnav-btn"    id="p1heatmap" onclick="setCenterView(1,'heatmap')">Heatmap</button>
       <button class="pnav-btn"    id="p1greeks"  onclick="setCenterView(1,'greeks')">Greeks</button>
+      <button class="pnav-btn"    id="p1compare" onclick="setCenterView(1,'compare')">Greeks Cmp</button>
       <button class="btn" id="splitBtn" onclick="toggleSplit()" style="margin-left:auto;font-size:9px;padding:1px 7px">⊞ Split</button>
     </div>
     <div id="pane1Body">
@@ -578,10 +579,13 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
         <h3 id="chartTitle" style="flex-shrink:0">Options P&amp;L vs Spot Price</h3>
         <!-- Smile chart info bar — shown only in smile view -->
         <div id="smileChartInfo" style="display:none;flex:1;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-size:9px;color:var(--mut)">Model params:</span>
+          <span style="font-size:9px;color:var(--mut)">Expiry:</span>
+          <select id="smileExpiry" style="font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 4px" onchange="renderSmileChart()">
+            <option value="">— all —</option>
+          </select>
+          <span style="font-size:9px;color:var(--mut)">· Model:</span>
           <span style="font-size:9px">Skew <span id="smileInfoSkew" style="color:var(--blu);font-family:monospace">-0.12</span></span>
           <span style="font-size:9px">Conv <span id="smileInfoConv" style="color:var(--blu);font-family:monospace">0.20</span></span>
-          <span style="font-size:9px;color:var(--mut)">(edit in Setup → IV Surface)</span>
           <span id="smileFitBadge" style="display:none;font-size:8px;padding:1px 5px;border-radius:6px;
             background:var(--grn);color:#000;font-weight:700">Live-fitted</span>
         </div>
@@ -698,31 +702,6 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
           <button id="gfPut"  class="lev-btn"    onclick="setGreeksFilter('put')"  style="font-size:9px;padding:2px 7px">Puts</button>
         </div>
         <span id="greeksSrcLabel" style="font-size:8px;color:var(--mut);margin-left:auto;font-style:italic"></span>
-        <button onclick="toggleComparePanel()" style="font-size:9px;padding:2px 7px;background:var(--sur2);border:1px solid var(--bdr);border-radius:3px;color:var(--txt);cursor:pointer;white-space:nowrap">⇌ Compare stocks</button>
-      </div>
-      <!-- Compare panel -->
-      <div id="comparePanel" style="display:none;padding:4px 8px 6px;border-top:1px solid var(--bdr);font-size:9px;color:var(--mut)">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
-          <span>Upload exported JSON files to overlay Greeks (moneyness x-axis, normalized by spot):</span>
-          <input type="file" id="compareFileInput" accept=".json" multiple
-            style="font-size:9px;color:var(--txt)"
-            onchange="loadCompareFiles(this.files)">
-          <span style="white-space:nowrap">DTE:
-            <input type="number" id="compareDTE" value="7" min="1" max="730" step="1"
-              style="width:42px;font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 3px"
-              oninput="renderGreeksComparison()">d
-          </span>
-          <button onclick="clearCompareFiles()" style="font-size:9px;padding:1px 6px;background:var(--sur2);border:1px solid var(--bdr);border-radius:3px;color:var(--mut);cursor:pointer">Clear</button>
-        </div>
-        <div id="compareStatus" style="font-size:8px;color:var(--mut);margin-bottom:4px"></div>
-        <div id="compareCharts" style="display:none">
-          <div class="greeks-grid">
-            <div><canvas id="cmpDeltaChart"></canvas></div>
-            <div><canvas id="cmpGammaChart"></canvas></div>
-            <div><canvas id="cmpThetaChart"></canvas></div>
-            <div><canvas id="cmpVegaChart"></canvas></div>
-          </div>
-        </div>
       </div>
       <div class="bd" style="padding:4px 8px 6px">
         <!-- Hidden inputs read by renderGreeksDashboard -->
@@ -756,6 +735,41 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
       </div>
     </div><!-- /greeksCard -->
 
+    <!-- ── GREEKS COMPARISON CARD ── -->
+    <div class="card view-card" id="cmpCard" style="display:none">
+      <div class="hd" style="height:auto;padding:4px 8px;gap:6px;flex-wrap:wrap">
+        <h3>Greeks Comparison</h3>
+        <span style="font-size:9px;color:var(--mut)">Upload exported JSON snapshots · moneyness x-axis · normalized by spot</span>
+        <span style="white-space:nowrap;margin-left:auto">DTE target:
+          <input type="number" id="compareDTE" value="7" min="1" max="730" step="1"
+            style="width:42px;font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 3px"
+            oninput="renderGreeksComparison()">d
+        </span>
+      </div>
+      <div class="bd" style="padding:6px 8px">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+          <label style="font-size:9px;color:var(--mut)">Load files:</label>
+          <input type="file" id="compareFileInput" accept=".json" multiple
+            style="font-size:9px;color:var(--txt)"
+            onchange="loadCompareFiles(this.files)">
+          <button onclick="clearCompareFiles()" style="font-size:9px;padding:1px 6px;background:var(--sur2);border:1px solid var(--bdr);border-radius:3px;color:var(--mut);cursor:pointer">Clear</button>
+          <span id="compareStatus" style="font-size:8px;color:var(--mut)"></span>
+        </div>
+        <div id="compareCharts">
+          <div style="font-size:9px;color:var(--mut);text-align:center;padding:20px" id="cmpPlaceholder">
+            Upload JSON exports from the Prices tab to compare Greeks across stocks.<br>
+            Delta is unitless · Gamma × Spot · Theta ÷ Spot · Vega ÷ Spot
+          </div>
+          <div class="greeks-grid" id="cmpGrid" style="display:none">
+            <div><canvas id="cmpDeltaChart"></canvas></div>
+            <div><canvas id="cmpGammaChart"></canvas></div>
+            <div><canvas id="cmpThetaChart"></canvas></div>
+            <div><canvas id="cmpVegaChart"></canvas></div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /cmpCard -->
+
     </div><!-- /pane1Body -->
   </div><!-- /pane1 -->
 
@@ -768,6 +782,7 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
       <button class="pnav-btn" id="p2pnl"     onclick="setCenterView(2,'pnl')">P&amp;L / Smile</button>
       <button class="pnav-btn on" id="p2heatmap" onclick="setCenterView(2,'heatmap')">Heatmap</button>
       <button class="pnav-btn" id="p2greeks"  onclick="setCenterView(2,'greeks')">Greeks</button>
+      <button class="pnav-btn" id="p2compare" onclick="setCenterView(2,'compare')">Greeks Cmp</button>
       <button class="btn" onclick="toggleSplit()" style="margin-left:auto;font-size:9px;padding:1px 7px">✕ Unsplit</button>
     </div>
     <div id="pane2Body" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto;padding:4px">
@@ -1793,7 +1808,16 @@ function setMode(m){
   document.getElementById('liveBtn').style.display=isLive?'':'none';
   document.getElementById('liveStatus').style.display=isLive?'':'none';
   updateSaxoUI();
-  if(!isLive){ setLiveLock(false); stopLiveTimer(); }
+  if(!isLive){
+    setLiveLock(false);
+    stopLiveTimer();
+    // Clear live market data so sim charts don't show stale live overlays
+    state.liveOptions=[];
+    updateGreeksExpiries();
+    if(chart){chart.destroy();chart=null;}
+    Object.keys(_greeksCharts).forEach(k=>{if(_greeksCharts[k]){_greeksCharts[k].destroy();delete _greeksCharts[k];}});
+    renderAll();
+  }
   if(isLive&&state.liveSource==='yahoo') fetchLiveData();
 }
 
@@ -2545,23 +2569,35 @@ function renderSmileChart(){
 
   const datasets=[];
 
-  // 1. Market IV interpolation curve (when live data loaded) — most accurate
+  // 1. Market IV curves per expiry (when live data loaded) — most accurate
   const usedForPnl=state.ivSurface==='smile';
   const hasMarket=state.liveOptions.length>0;
   if(hasMarket){
-    // Get nearest expiry in market data
     const mktExps=[...new Set(state.liveOptions.map(o=>o.exp))].sort();
-    // Show separate call/put interpolation curves
-    const mktCallIVs=strikes.map(K=>{const v=marketIV(K,mktExps[0],'call');return v?v*100:null;});
-    const mktPutIVs =strikes.map(K=>{const v=marketIV(K,mktExps[0],'put'); return v?v*100:null;});
+    // Populate expiry selector
+    const smileExpSel=document.getElementById('smileExpiry');
+    if(smileExpSel){
+      const prev=smileExpSel.value;
+      smileExpSel.innerHTML='';
+      mktExps.forEach(e=>{
+        const o=document.createElement('option');
+        o.value=e; o.textContent=e+dteSuffix(e);
+        smileExpSel.appendChild(o);
+      });
+      if(prev&&mktExps.includes(prev)) smileExpSel.value=prev;
+      else smileExpSel.value=mktExps[0];
+    }
+    const selExp=smileExpSel?.value||mktExps[0];
+    const mktCallIVs=strikes.map(K=>{const v=marketIV(K,selExp,'call');return v?v*100:null;});
+    const mktPutIVs =strikes.map(K=>{const v=marketIV(K,selExp,'put'); return v?v*100:null;});
     datasets.push({
-      label:`Market IV calls — ${mktExps[0]}${usedForPnl?' ← used for P&L':''}`,
+      label:`Market IV calls — ${selExp}${usedForPnl?' ← used for P&L':''}`,
       data:mktCallIVs,
       borderColor:'#3fb950',backgroundColor:'rgba(63,185,80,0.06)',
       borderWidth:usedForPnl?2:1.5,pointRadius:0,tension:0.3,fill:false,
     });
     datasets.push({
-      label:`Market IV puts — ${mktExps[0]}${usedForPnl?' ← used for P&L':''}`,
+      label:`Market IV puts — ${selExp}${usedForPnl?' ← used for P&L':''}`,
       data:mktPutIVs,
       borderColor:'#f85149',backgroundColor:'transparent',
       borderWidth:usedForPnl?2:1.5,pointRadius:0,tension:0.3,fill:false,
@@ -2601,12 +2637,13 @@ function renderSmileChart(){
     });
   }
 
-  // 6. Live market IV scatter points from Yahoo Finance
-  const callPoints=state.liveOptions.filter(o=>o.type==='call');
-  const putPoints =state.liveOptions.filter(o=>o.type==='put');
+  // 6. Live market IV scatter points — filtered to selected expiry
+  const selExpForScatter=document.getElementById('smileExpiry')?.value||'';
+  const callPoints=state.liveOptions.filter(o=>o.type==='call'&&(!selExpForScatter||o.exp===selExpForScatter));
+  const putPoints =state.liveOptions.filter(o=>o.type==='put' &&(!selExpForScatter||o.exp===selExpForScatter));
   if(callPoints.length){
     datasets.push({
-      label:'Live market IV — Calls',
+      label:'Market data points — Calls',
       data:strikes.map(K=>{
         const o=callPoints.find(p=>Math.abs(p.K-K)<step*0.6);
         return o?o.iv*100:null;
@@ -2617,7 +2654,7 @@ function renderSmileChart(){
   }
   if(putPoints.length){
     datasets.push({
-      label:'Live market IV — Puts',
+      label:'Market data points — Puts',
       data:strikes.map(K=>{
         const o=putPoints.find(p=>Math.abs(p.K-K)<step*0.6);
         return o?o.iv*100:null;
@@ -3519,7 +3556,7 @@ let _pane1View='pnl';
 let _pane2View='heatmap';
 let _splitActive=false;
 
-const _viewCards={pnl:'chartCard',heatmap:'hmCard',greeks:'greeksCard'};
+const _viewCards={pnl:'chartCard',heatmap:'hmCard',greeks:'greeksCard',compare:'cmpCard'};
 
 function setCenterView(pane,view){
   if(pane===1){
@@ -3542,7 +3579,7 @@ function toggleSplit(){
   document.getElementById('pane2').style.display=_splitActive?'flex':'none';
   document.getElementById('rzSplit').style.display=_splitActive?'':'none';
   if(_splitActive&&_pane2View===_pane1View){
-    const views=['pnl','heatmap','greeks'];
+    const views=['pnl','heatmap','greeks','compare'];
     _pane2View=views.find(v=>v!==_pane1View)||'heatmap';
   }
   // Reset pane1 flex when toggling
@@ -3569,7 +3606,7 @@ function _applyViewLayout(){
     if(p2el){p2b.appendChild(p2el);p2el.style.display='flex';}
   }
   // Update nav button states
-  ['pnl','heatmap','greeks'].forEach(v=>{
+  ['pnl','heatmap','greeks','compare'].forEach(v=>{
     const b1=document.getElementById('p1'+v);
     const b2=document.getElementById('p2'+v);
     if(b1) b1.classList.toggle('on',v===_pane1View);
@@ -3583,6 +3620,7 @@ function reRenderActiveViews(){
   if(_pane1View==='pnl'||(_splitActive&&_pane2View==='pnl')) renderChart();
   if(_pane1View==='heatmap'||(_splitActive&&_pane2View==='heatmap')) scheduleHeatmap();
   if(_pane1View==='greeks'||(_splitActive&&_pane2View==='greeks')) renderGreeksDashboard();
+  // compare view is data-driven; no auto re-render needed (user triggers via file upload)
 }
 
 // ── Right sidebar tab switching ──
@@ -4147,16 +4185,14 @@ const _compareStocks=[]; // [{ticker, spot, chain}]
 const _cmpCharts={};
 const _CMP_COLORS=['#58a6ff','#3fb950','#f78166','#d2a8ff','#ffa657','#79c0ff','#56d364','#ff7b72'];
 
-function toggleComparePanel(){
-  const p=document.getElementById('comparePanel');
-  if(p) p.style.display=p.style.display==='none'?'':'none';
-}
-
 function clearCompareFiles(){
   _compareStocks.length=0;
   document.getElementById('compareFileInput').value='';
   document.getElementById('compareStatus').textContent='';
-  document.getElementById('compareCharts').style.display='none';
+  const grid=document.getElementById('cmpGrid');
+  const ph=document.getElementById('cmpPlaceholder');
+  if(grid) grid.style.display='none';
+  if(ph) ph.style.display='';
   Object.keys(_cmpCharts).forEach(k=>{if(_cmpCharts[k]){_cmpCharts[k].destroy();delete _cmpCharts[k];}});
 }
 
@@ -4182,8 +4218,11 @@ async function loadCompareFiles(files){
 
 function renderGreeksComparison(){
   const targetDTE=+(document.getElementById('compareDTE')?.value||7);
-  const chartsDiv=document.getElementById('compareCharts');
-  if(!_compareStocks.length||!chartsDiv) return;
+  if(!_compareStocks.length) return;
+  const grid=document.getElementById('cmpGrid');
+  const ph=document.getElementById('cmpPlaceholder');
+  if(grid) grid.style.display='';
+  if(ph) ph.style.display='none';
 
   // Build moneyness grid 0.4 … 2.0 in steps of 0.025
   const mLo=0.40, mHi=2.00, mStep=0.025;
