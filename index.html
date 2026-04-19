@@ -676,7 +676,7 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
         <h3>Greeks vs Spot</h3>
         <span style="font-size:9px;color:var(--mut)">Expiry:</span>
         <select id="greeksExpiry" style="font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 4px" onchange="renderGreeksDashboard()">
-          <option value="all">All expiries</option>
+          <option value="">— load data —</option>
         </select>
         <div style="display:flex;gap:2px">
           <button id="gfAll"  class="lev-btn on" onclick="setGreeksFilter('all')"  style="font-size:9px;padding:2px 7px">All</button>
@@ -2035,24 +2035,22 @@ async function fetchLiveData(){
     }
     const chain=d2?.optionChain?.result?.[0];
     if(!chain) throw new Error('Yahoo options: no chain data returned');
-    const exps=chain.expirationDates; // unix timestamps
 
-    // Collect all calls + puts from the nearest expiry
-    const opts=chain.options[0];
+    // Worker returns all expiry pages merged into chain.options[]
     const toDate=ts=>new Date(ts*1000).toISOString().slice(0,10);
-    state.liveOptions=[
-      ...opts.calls.filter(o=>o.impliedVolatility>0).map(o=>({
-        K:o.strike, iv:o.impliedVolatility, type:'call', exp:toDate(o.expiration),
-        bid:o.bid, ask:o.ask,
-      })),
-      ...opts.puts.filter(o=>o.impliedVolatility>0).map(o=>({
-        K:o.strike, iv:o.impliedVolatility, type:'put', exp:toDate(o.expiration),
-        bid:o.bid, ask:o.ask,
-      })),
-    ];
+    state.liveOptions=[];
+    for(const page of (chain.options||[])){
+      for(const o of (page.calls||[])){
+        if(o.impliedVolatility>0) state.liveOptions.push({K:o.strike,iv:o.impliedVolatility,type:'call',exp:toDate(o.expiration),bid:o.bid,ask:o.ask});
+      }
+      for(const o of (page.puts||[])){
+        if(o.impliedVolatility>0) state.liveOptions.push({K:o.strike,iv:o.impliedVolatility,type:'put',exp:toDate(o.expiration),bid:o.bid,ask:o.ask});
+      }
+    }
 
-    // Set global IV to ATM call IV
-    const atmCall=opts.calls.reduce((b,o)=>Math.abs(o.strike-spot)<Math.abs(b.strike-spot)?o:b,opts.calls[0]);
+    // Set global IV to ATM call IV from nearest expiry
+    const nearestCalls=(chain.options[0]?.calls||[]);
+    const atmCall=nearestCalls.length>0?nearestCalls.reduce((b,o)=>Math.abs(o.strike-spot)<Math.abs(b.strike-spot)?o:b,nearestCalls[0]):null;
     if(atmCall?.impliedVolatility>0) syncIV(Math.round(atmCall.impliedVolatility*100));
 
     // ── Fit smile parameters to live market data ──
@@ -3745,17 +3743,22 @@ function setGreeksFilter(f){
 function updateGreeksExpiries(){
   const sel=document.getElementById('greeksExpiry');
   if(!sel) return;
-  // Use liveOptions expiries if loaded (richer set); fall back to strategy legs
   const src=state.liveOptions.length>0?state.liveOptions:state.legs;
   const exps=[...new Set(src.map(o=>o.exp))].sort();
   const prev=sel.value;
-  sel.innerHTML='<option value="all">All expiries</option>';
+  sel.innerHTML='';
+  if(exps.length===0){
+    sel.innerHTML='<option value="">— load data —</option>';
+    return;
+  }
   exps.forEach(e=>{
     const o=document.createElement('option');
     o.value=e; o.textContent=e;
     sel.appendChild(o);
   });
+  // Keep previous selection if still valid; otherwise default to first expiry
   if(prev&&[...sel.options].some(o=>o.value===prev)) sel.value=prev;
+  else sel.value=exps[0];
 }
 
 function renderGreeksDashboard(){
@@ -3766,17 +3769,16 @@ function renderGreeksDashboard(){
   const spots=[];
   for(let i=0;i<=steps;i++) spots.push(lo+(hi-lo)*i/steps);
 
-  const selExp=document.getElementById('greeksExpiry')?.value||'all';
+  const selExp=document.getElementById('greeksExpiry')?.value||'';
 
   // ── Data source: liveOptions (market chain) takes priority over strategy legs ──
   const useLive=state.liveOptions.length>0;
 
-  // Build two position arrays — calls and puts — applying expiry filter but NOT type filter
-  // (type filter just controls which lines are visible, not which data is computed)
+  // Build two position arrays — calls and puts — filtered by selected expiry
   function getPositions(typeFilter){
     const src=useLive?state.liveOptions:state.legs;
     return src.filter(o=>{
-      if(selExp!=='all'&&o.exp!==selExp) return false;
+      if(selExp&&o.exp!==selExp) return false;
       if(o.type!==typeFilter) return false;
       return true;
     }).map(o=>useLive

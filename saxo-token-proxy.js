@@ -47,18 +47,36 @@ function extractCookies(response) {
   } catch (_) { return ''; }
 }
 
+// Fetch one page of Yahoo options (for a specific date or the nearest expiry).
+// Returns { ok, status, data } where data is parsed JSON or null.
+async function fetchYahooOptionsPage(ticker, hdrs, crumbParam, dateTs) {
+  const dateParam = dateTs ? `&date=${dateTs}` : '';
+  const endpoints = [
+    `https://query1.finance.yahoo.com/v7/finance/options/${ticker}?lang=en-US&region=US${crumbParam}${dateParam}`,
+    `https://query2.finance.yahoo.com/v8/finance/options/${ticker}?lang=en-US&region=US${crumbParam}${dateParam}`,
+    `https://query2.finance.yahoo.com/v8/finance/options/${ticker}?lang=en-US&region=US${dateParam}`,
+  ];
+  for (const ep of endpoints) {
+    try {
+      const resp = await fetch(ep, { headers: hdrs });
+      if (resp.ok) {
+        const data = await resp.json();
+        return { ok: true, status: resp.status, data };
+      }
+    } catch (_) {}
+  }
+  return { ok: false, status: 502, data: null };
+}
+
 async function fetchYahooOptions(ticker) {
-  // ── Step 1: get session cookies from fc.yahoo.com (lightweight, no consent wall) ──
+  // ── Step 1: session cookie from fc.yahoo.com (no consent wall) ──
   let cookieStr = '';
   try {
-    const fcResp = await fetch('https://fc.yahoo.com', {
-      headers: BROWSER_HDRS,
-      redirect: 'follow',
-    });
+    const fcResp = await fetch('https://fc.yahoo.com', { headers: BROWSER_HDRS, redirect: 'follow' });
     cookieStr = extractCookies(fcResp);
   } catch (_) {}
 
-  // ── Step 2: obtain crumb tied to the session cookie ──
+  // ── Step 2: crumb ──
   let crumb = '';
   if (cookieStr) {
     try {
@@ -69,43 +87,59 @@ async function fetchYahooOptions(ticker) {
     } catch (_) {}
   }
 
-  // ── Step 3: try multiple endpoints with and without crumb ──
   const hdrs = cookieStr ? { ...BROWSER_HDRS, Cookie: cookieStr } : BROWSER_HDRS;
   const crumbParam = crumb ? `&crumb=${encodeURIComponent(crumb)}` : '';
 
-  const endpoints = [
-    // With crumb + cookie (preferred)
-    `https://query1.finance.yahoo.com/v7/finance/options/${ticker}?lang=en-US&region=US${crumbParam}`,
-    `https://query2.finance.yahoo.com/v8/finance/options/${ticker}?lang=en-US&region=US${crumbParam}`,
-    // Without crumb (fallback — sometimes works from server IPs)
-    `https://query2.finance.yahoo.com/v8/finance/options/${ticker}?lang=en-US&region=US`,
-    `https://query1.finance.yahoo.com/v7/finance/options/${ticker}?lang=en-US&region=US`,
-  ];
+  // ── Step 3: fetch first page to get list of all expiration timestamps ──
+  const first = await fetchYahooOptionsPage(ticker, hdrs, crumbParam, null);
+  if (!first.ok || !first.data) {
+    return {
+      ok: false, status: first.status,
+      body: JSON.stringify({
+        error: 'yahoo_options_first_page_failed',
+        crumb_obtained: !!crumb, cookie_obtained: !!cookieStr,
+      }),
+    };
+  }
 
-  let lastResp;
-  let lastBody;
-  for (const ep of endpoints) {
-    try {
-      lastResp = await fetch(ep, { headers: hdrs });
-      lastBody = await lastResp.text();
-      if (lastResp.ok) return { ok: true, status: lastResp.status, body: lastBody };
-    } catch (e) {
-      lastBody = String(e);
+  const chain0 = first.data?.optionChain?.result?.[0];
+  if (!chain0) {
+    return { ok: false, status: 502, body: JSON.stringify({ error: 'no chain result in yahoo response' }) };
+  }
+
+  const allExpTs = chain0.expirationDates || []; // unix timestamps for ALL expiries
+  // Collect contracts from first page
+  const allOptions = [...(chain0.options || [])];
+
+  // ── Step 4: fetch remaining expiry pages (CF Workers free: 50ms CPU, ~6 requests/invocation) ──
+  // Limit to first 12 expiries to stay well within Worker CPU limits
+  const remaining = allExpTs.slice(1, 12);
+  for (const ts of remaining) {
+    const page = await fetchYahooOptionsPage(ticker, hdrs, crumbParam, ts);
+    if (page.ok && page.data) {
+      const pageChain = page.data?.optionChain?.result?.[0];
+      if (pageChain?.options?.length) {
+        allOptions.push(...pageChain.options);
+      }
     }
   }
 
-  // All failed — return last error body so client can inspect what Yahoo said
-  return {
-    ok: false,
-    status: lastResp?.status ?? 502,
-    body: JSON.stringify({
-      error: 'yahoo_options_all_failed',
-      last_status: lastResp?.status,
-      crumb_obtained: !!crumb,
-      cookie_obtained: !!cookieStr,
-      last_body_snippet: (lastBody || '').slice(0, 500),
-    }),
+  // Reconstruct a response shaped like a single Yahoo options call but with all expiries
+  const combined = {
+    optionChain: {
+      result: [{
+        underlyingSymbol: chain0.underlyingSymbol,
+        expirationDates: allExpTs,
+        strikes: chain0.strikes,
+        hasMiniOptions: chain0.hasMiniOptions,
+        quote: chain0.quote,
+        options: allOptions,  // all expiry pages merged
+      }],
+      error: null,
+    },
   };
+
+  return { ok: true, status: 200, body: JSON.stringify(combined) };
 }
 
 export default {
