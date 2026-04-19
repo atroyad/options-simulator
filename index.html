@@ -285,7 +285,6 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
         oninput="setTicker(this.value)">
     </div>
     <button class="btn" id="liveBtn" style="display:none;font-size:10px;padding:3px 8px" onclick="fetchLiveData()">⟳ Fetch</button>
-    <button class="btn" id="exportBtn" style="display:none;font-size:10px;padding:3px 8px;background:var(--sur2);border:1px solid var(--bdr)" onclick="exportOptionsData()">⬇ Export</button>
   </div>
   <div style="display:flex;align-items:center;gap:6px;margin-left:auto">
     <span id="liveStatus" style="font-size:9px;color:var(--mut);display:none;max-width:200px;line-height:1.3"></span>
@@ -640,20 +639,27 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
 
     <!-- ── HEATMAP CARD ── -->
     <div class="card view-card" id="hmCard" style="display:none">
-      <div class="hd" style="height:auto;flex-wrap:wrap;padding:4px 8px;gap:4px">
-        <h3 id="hmTitle" style="white-space:nowrap">P&amp;L Heatmap</h3>
-        <span style="font-size:9px;color:var(--mut)">X:</span>
-        <input type="number" id="hmMin" value="100" min="1" max="99999" step="10"
-          style="width:62px;font-size:9px;padding:1px 4px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px"
-          oninput="scheduleHeatmap()">
-        <span style="font-size:9px;color:var(--mut)">–</span>
-        <input type="number" id="hmMax" value="400" min="2" max="99999" step="10"
-          style="width:62px;font-size:9px;padding:1px 4px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px"
-          oninput="scheduleHeatmap()">
-        <span style="font-size:8px;color:var(--mut)">scroll/drag to zoom·pan</span>
+      <div class="hd">
+        <h3 id="hmTitle">P&amp;L Heatmap</h3>
         <span id="hmTip" style="font-size:9px;color:var(--mut);font-family:monospace;margin-left:auto"></span>
       </div>
       <div class="bd">
+        <!-- Hidden inputs read by renderHeatmap -->
+        <input type="hidden" id="hmMin" value="100">
+        <input type="hidden" id="hmMax" value="400">
+        <div class="sc-row" style="font-size:9px;color:var(--mut);padding:1px 0 3px;gap:6px;align-items:center">
+          <span style="white-space:nowrap">X range:</span>
+          <span style="white-space:nowrap;font-family:monospace;min-width:28px;text-align:right" id="hmMinLabel">$100</span>
+          <input type="range" id="hmMinSlider" min="1" max="4999" value="100" step="1"
+            style="flex:1;min-width:40px;accent-color:var(--blu);height:3px"
+            oninput="onHmRangeSlider('min',this.value)">
+          <input type="range" id="hmMaxSlider" min="2" max="5000" value="400" step="1"
+            style="flex:1;min-width:40px;accent-color:var(--blu);height:3px"
+            oninput="onHmRangeSlider('max',this.value)">
+          <span style="white-space:nowrap;font-family:monospace;min-width:36px" id="hmMaxLabel">$400</span>
+          <span style="color:var(--mut);margin-left:2px">·</span>
+          <span style="white-space:nowrap;color:var(--mut)">Scroll · Drag to pan</span>
+        </div>
         <canvas id="heatmapCanvas"></canvas>
         <div class="hm-leg">
           <span>■ <span style="color:var(--grn)">Max profit</span></span>
@@ -677,14 +683,24 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
           <button id="gfCall" class="lev-btn"    onclick="setGreeksFilter('call')" style="font-size:9px;padding:2px 7px">Calls</button>
           <button id="gfPut"  class="lev-btn"    onclick="setGreeksFilter('put')"  style="font-size:9px;padding:2px 7px">Puts</button>
         </div>
-        <span style="font-size:9px;color:var(--mut)">Range:</span>
-        <input type="range" id="greeksRange" min="10" max="100" step="5" value="50"
-          oninput="setGreeksRange(this.value)"
-          style="width:55px;accent-color:var(--acc);cursor:pointer">
-        <span id="greeksRangeVal" style="font-size:9px;color:var(--mut);min-width:30px">±50%</span>
         <span id="greeksSrcLabel" style="font-size:8px;color:var(--mut);margin-left:auto;font-style:italic"></span>
       </div>
-      <div class="bd" style="padding:6px 8px">
+      <div class="bd" style="padding:4px 8px 6px">
+        <!-- Hidden inputs read by renderGreeksDashboard -->
+        <input type="hidden" id="gMin" value="100">
+        <input type="hidden" id="gMax" value="400">
+        <div class="sc-row" style="font-size:9px;color:var(--mut);padding:1px 0 4px;gap:6px;align-items:center">
+          <span style="white-space:nowrap">X range:</span>
+          <span style="white-space:nowrap;font-family:monospace;min-width:28px;text-align:right" id="gMinLabel">$100</span>
+          <input type="range" id="gMinSlider" min="1" max="4999" value="100" step="1"
+            style="flex:1;min-width:40px;accent-color:var(--blu);height:3px"
+            oninput="onGreeksRangeSlider('min',this.value)">
+          <input type="range" id="gMaxSlider" min="2" max="5000" value="400" step="1"
+            style="flex:1;min-width:40px;accent-color:var(--blu);height:3px"
+            oninput="onGreeksRangeSlider('max',this.value)">
+          <span style="white-space:nowrap;font-family:monospace;min-width:36px" id="gMaxLabel">$400</span>
+          <button onclick="resetGreeksRange()" style="font-size:8px;padding:1px 5px;border:1px solid var(--bdr);border-radius:3px;background:var(--sur2);color:var(--mut);cursor:pointer;white-space:nowrap">Reset</button>
+        </div>
         <div class="greeks-grid">
           <div><canvas id="gDeltaChart"></canvas></div>
           <div><canvas id="gGammaChart"></canvas></div>
@@ -820,8 +836,9 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
   <!-- ══ TAB: PRICES ══ -->
   <div class="sb-pane" id="rsPrices" style="display:none">
     <div class="card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0">
-      <div class="hd"><h3>Option Prices</h3>
-        <div style="display:flex;gap:4px;align-items:center">
+      <div class="hd" style="height:auto;flex-wrap:wrap;gap:4px;padding:4px 8px">
+        <h3>Option Prices</h3>
+        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
           <div style="display:flex;gap:2px">
             <button id="pcAll"  class="lev-btn on" onclick="setPriceFilter('all')"  style="font-size:9px;padding:2px 7px">All</button>
             <button id="pcCall" class="lev-btn"    onclick="setPriceFilter('call')" style="font-size:9px;padding:2px 7px">Calls</button>
@@ -830,6 +847,7 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
           <select id="pcExpiry" onchange="renderPricesTable()" style="font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 3px">
             <option value="all">All expiries</option>
           </select>
+          <button id="exportBtn" onclick="exportOptionsData()" style="font-size:9px;padding:2px 7px;background:var(--sur2);border:1px solid var(--bdr);border-radius:3px;color:var(--txt);cursor:pointer;white-space:nowrap">⬇ Export CSV</button>
           <span id="pcLiveNote" style="font-size:9px;color:var(--ylw)"></span>
         </div>
       </div>
@@ -1721,7 +1739,6 @@ function setMode(m){
   document.getElementById('liveSrcRow').style.display=isLive?'flex':'none';
   document.getElementById('tickerRow').style.display=isLive?'flex':'none';
   document.getElementById('liveBtn').style.display=isLive?'':'none';
-  document.getElementById('exportBtn').style.display=isLive?'':'none';
   document.getElementById('liveStatus').style.display=isLive?'':'none';
   updateSaxoUI();
   if(!isLive){ setLiveLock(false); stopLiveTimer(); }
@@ -2011,8 +2028,11 @@ async function fetchLiveData(){
 
     // ── Options chain ──
     const r2=await fetch(`${proxyBase}/yahoo?ticker=${state.ticker}&type=options`,{cache:'no-cache'});
-    if(!r2.ok) throw new Error(`Yahoo options HTTP ${r2.status}`);
     const d2=await r2.json();
+    if(!r2.ok){
+      console.error('Yahoo options error from worker:',d2);
+      throw new Error(`Yahoo options ${r2.status}: ${d2?.last_body_snippet||d2?.error||'unknown'}`);
+    }
     const chain=d2?.optionChain?.result?.[0];
     if(!chain) throw new Error('Yahoo options: no chain data returned');
     const exps=chain.expirationDates; // unix timestamps
@@ -2356,8 +2376,8 @@ function setChartView(v){
   document.getElementById('cvSmile').style.background =isPnl?'var(--sur2)':'var(--pur)';
   document.getElementById('cvSmile').style.color      =isPnl?'var(--mut)':'#000';
   document.getElementById('cvSmile').style.fontWeight =isPnl?'400':'700';
-  // Show/hide P&L-only controls
-  ['pnlControls','customDayControls','customDayPills','spotRangeRow']
+  // Show/hide P&L-only controls (spotRangeRow stays visible in both views)
+  ['pnlControls','customDayControls','customDayPills']
     .forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=isPnl?'':'none';});
   // Show/hide smile info bar
   const infoBar=document.getElementById('smileChartInfo');
@@ -3244,10 +3264,7 @@ function renderHeatmap(){
     const frac=Math.max(0,Math.min(1,(e.clientX-rect.left-PAD_L)/((cw-PAD_L)||1)));
     const pivot=lo+frac*(hi-lo);
     const factor=e.deltaY>0?1.1:0.9;
-    const newLo=Math.max(1,Math.round(pivot-(pivot-lo)*factor));
-    const newHi=Math.max(newLo+1,Math.round(pivot+(hi-pivot)*factor));
-    document.getElementById('hmMin').value=newLo;
-    document.getElementById('hmMax').value=newHi;
+    updateHmSliderUI(Math.max(1,Math.round(pivot-(pivot-lo)*factor)), Math.max(lo+1,Math.round(pivot+(hi-pivot)*factor)));
     scheduleHeatmap();
   };
 
@@ -3260,13 +3277,11 @@ function renderHeatmap(){
   canvas.onmousemove=e=>{
     _hmOldMove(e);
     if(_hmDragX===null||!(e.buttons&1)) return;
-    const dx=_hmDragX-e.clientX; // pixels dragged right → pan right
+    const dx=_hmDragX-e.clientX;
     const range=_hmDragHi-_hmDragLo;
     const shift=Math.round(dx/((cw-PAD_L)||1)*range);
     const newLo=Math.max(1,_hmDragLo+shift);
-    const newHi=newLo+range;
-    document.getElementById('hmMin').value=newLo;
-    document.getElementById('hmMax').value=newHi;
+    updateHmSliderUI(newLo, newLo+range);
     scheduleHeatmap();
   };
 }
@@ -3643,17 +3658,55 @@ function loadPreset(name){
 // ═══════════════════════════════════════════════════════
 // CONTROLS
 // ═══════════════════════════════════════════════════════
+function updateHmSliderUI(lo,hi){
+  lo=Math.max(1,Math.round(lo)); hi=Math.max(lo+1,Math.round(hi));
+  document.getElementById('hmMin').value=lo;
+  document.getElementById('hmMax').value=hi;
+  document.getElementById('hmMinSlider').value=lo;
+  document.getElementById('hmMaxSlider').value=hi;
+  document.getElementById('hmMinLabel').textContent='$'+lo;
+  document.getElementById('hmMaxLabel').textContent='$'+hi;
+}
+function onHmRangeSlider(which,val){
+  val=+val;
+  let lo=+document.getElementById('hmMin').value;
+  let hi=+document.getElementById('hmMax').value;
+  if(which==='min') lo=Math.min(val,hi-10);
+  else               hi=Math.max(val,lo+10);
+  updateHmSliderUI(lo,hi);
+  scheduleHeatmap();
+}
 function initHmRange(){
   const s=state.spot;
-  const minEl=document.getElementById('hmMin');
-  const maxEl=document.getElementById('hmMax');
-  if(!minEl||!maxEl) return;
-  // Only auto-init if values still at defaults or spot is completely outside current range
-  const lo=+minEl.value, hi=+maxEl.value;
+  const lo=+document.getElementById('hmMin').value;
+  const hi=+document.getElementById('hmMax').value;
   if(lo===100&&hi===400||s<lo||s>hi){
-    minEl.value=Math.max(1,Math.round(s*0.5));
-    maxEl.value=Math.round(s*1.5);
+    const newLo=Math.max(1,Math.round(s*0.5)), newHi=Math.round(s*1.5);
+    updateHmSliderUI(newLo,newHi);
+    updateGreeksSliderUI(newLo,newHi);
   }
+}
+function updateGreeksSliderUI(lo,hi){
+  lo=Math.max(1,Math.round(lo)); hi=Math.max(lo+1,Math.round(hi));
+  document.getElementById('gMin').value=lo;
+  document.getElementById('gMax').value=hi;
+  document.getElementById('gMinSlider').value=lo;
+  document.getElementById('gMaxSlider').value=hi;
+  document.getElementById('gMinLabel').textContent='$'+lo;
+  document.getElementById('gMaxLabel').textContent='$'+hi;
+}
+function onGreeksRangeSlider(which,val){
+  val=+val;
+  let lo=+document.getElementById('gMin').value;
+  let hi=+document.getElementById('gMax').value;
+  if(which==='min') lo=Math.min(val,hi-10);
+  else               hi=Math.max(val,lo+10);
+  updateGreeksSliderUI(lo,hi);
+  renderGreeksDashboard();
+}
+function resetGreeksRange(){
+  updateGreeksSliderUI(Math.max(1,Math.round(state.spot*0.5)),Math.round(state.spot*1.5));
+  renderGreeksDashboard();
 }
 function syncSpot(v){
   state.spot=+v;
@@ -3680,19 +3733,12 @@ function togLine(btn){
 // ═══════════════════════════════════════════════════════
 let _greeksCharts={};
 let _greeksFilter='all'; // 'all' | 'call' | 'put'
-let _greeksRange=50;    // ±% of current spot shown on x-axis
 
 function setGreeksFilter(f){
   _greeksFilter=f;
   document.getElementById('gfAll').classList.toggle('on',f==='all');
   document.getElementById('gfCall').classList.toggle('on',f==='call');
   document.getElementById('gfPut').classList.toggle('on',f==='put');
-  renderGreeksDashboard();
-}
-function setGreeksRange(v){
-  _greeksRange=+v;
-  const lbl=document.getElementById('greeksRangeVal');
-  if(lbl) lbl.textContent=`±${v}%`;
   renderGreeksDashboard();
 }
 
@@ -3714,8 +3760,8 @@ function updateGreeksExpiries(){
 
 function renderGreeksDashboard(){
   const spot=state.spot;
-  const pct=_greeksRange/100;
-  const lo=Math.max(1,spot*(1-pct)), hi=spot*(1+pct);
+  const lo=Math.max(1,+document.getElementById('gMin').value||Math.round(spot*0.5));
+  const hi=Math.max(lo+1,+document.getElementById('gMax').value||Math.round(spot*1.5));
   const steps=60;
   const spots=[];
   for(let i=0;i<=steps;i++) spots.push(lo+(hi-lo)*i/steps);
