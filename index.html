@@ -3792,21 +3792,28 @@ function renderGreeksDashboard(){
 
   // Update source label
   const srcLbl=document.getElementById('greeksSrcLabel');
-  if(srcLbl) srcLbl.textContent=useLive?'Market chain (1 contract each)':'Strategy legs';
+  if(srcLbl) srcLbl.textContent=useLive?'Avg per-share across strikes':'Portfolio (×qty ×100)';
 
   function computeGreekSeries(positions){
     const sets={delta:[],gamma:[],theta:[],vega:[]};
     for(const S of spots){
-      let d=0,g=0,th=0,v=0;
+      let d=0,g=0,th=0,v=0,n=0;
       for(const p of positions){
         const T=getT(p.exp);
         if(T<=0) continue;
         const iv=p.iv!=null ? p.iv : (state.ivSurface==='smile'?smileIV(p.K,S,state.iv):state.iv);
         const gr=bsAll(S,p.K,T,state.rate,iv,p.type);
-        const n=p.qty*100*p.sign;
-        d+=gr.delta*n; g+=gr.gamma*n; th+=gr.theta*n; v+=gr.vega*n;
+        if(useLive){
+          // Per-share average across all strikes at this expiry
+          d+=gr.delta; g+=gr.gamma; th+=gr.theta; v+=gr.vega; n++;
+        } else {
+          // Portfolio: sum weighted by qty × 100 × direction
+          const w=p.qty*100*p.sign;
+          d+=gr.delta*w; g+=gr.gamma*w; th+=gr.theta*w; v+=gr.vega*w; n=1;
+        }
       }
-      sets.delta.push(d); sets.gamma.push(g); sets.theta.push(th); sets.vega.push(v);
+      const cnt=useLive?(n||1):1;
+      sets.delta.push(d/cnt); sets.gamma.push(g/cnt); sets.theta.push(th/cnt); sets.vega.push(v/cnt);
     }
     return sets;
   }
@@ -3817,11 +3824,16 @@ function renderGreeksDashboard(){
   const labels=spots.map(s=>'$'+Math.round(s));
   const spotIdx=Math.round(steps/2); // current spot is always in the middle
 
+  // Units depend on mode
+  const dUnit=useLive?'Δ (per share)':'Δ (portfolio)';
+  const gUnit=useLive?'Γ (per share)':'Γ (portfolio)';
+  const tUnit=useLive?'Θ/day (per share)':'Θ/day (portfolio $)';
+  const vUnit=useLive?'ν per 1%IV (per share)':'ν per 1%IV ($)';
   const cfgs=[
-    {id:'gDeltaChart',label:'Delta Δ', key:'delta'},
-    {id:'gGammaChart',label:'Gamma Γ', key:'gamma'},
-    {id:'gThetaChart',label:'Theta Θ', key:'theta'},
-    {id:'gVegaChart', label:'Vega ν',  key:'vega'},
+    {id:'gDeltaChart',label:'Delta Δ', unit:dUnit, key:'delta'},
+    {id:'gGammaChart',label:'Gamma Γ', unit:gUnit, key:'gamma'},
+    {id:'gThetaChart',label:'Theta Θ', unit:tUnit, key:'theta'},
+    {id:'gVegaChart', label:'Vega ν',  unit:vUnit, key:'vega'},
   ];
 
   // Show/hide call/put lines based on filter
@@ -3887,10 +3899,10 @@ function renderGreeksDashboard(){
             border:{color:'#30363d'},
           },
           y:{
-            title:{display:true,text:cfg.label,color:'#8b949e',font:{size:8}},
+            title:{display:true,text:cfg.unit,color:'#8b949e',font:{size:8}},
             ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:5,
-              callback:v=>{const a=Math.abs(v);return(v>=0?'':'-')+(a>=1000?(a/1000).toFixed(1)+'k':a.toFixed(2));}},
-            grid:{color:'#21262d'},
+              callback:v=>{const a=Math.abs(v);return(v>=0?'':'-')+(a>=1000?(a/1000).toFixed(1)+'k':a.toFixed(3));}},
+            grid:{color:ctx=>(ctx.tick.value===0?'rgba(255,255,255,0.2)':'#21262d')},
             border:{color:'#30363d'},
           }
         }
