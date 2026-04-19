@@ -342,11 +342,23 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
           </div>
         </div>
 
+        <!-- Term structure -->
+        <label class="lbl" style="margin-top:8px">IV Term Structure</label>
+        <div style="font-size:8px;color:var(--mut);margin-bottom:4px;line-height:1.4">
+          Power-law: σ(T) = σ_ref × (30d/T)<sup>ζ</sup>. Affects all expiries in sim mode.<br>
+          ζ &gt; 0 → inverted (short IV higher, typical MSTR). ζ = 0 → flat.
+        </div>
+        <div class="row" style="gap:4px;margin-bottom:6px;align-items:center">
+          <span style="color:var(--mut);font-size:9px;min-width:22px">ζ</span>
+          <input type="range" id="termSlopeIn" min="-0.5" max="0.5" step="0.01" value="0"
+            style="flex:1" oninput="state.termSlope=+this.value;document.getElementById('termSlopeVal').textContent=(+this.value>=0?'+':'')+this.value;renderAll()">
+          <span id="termSlopeVal" style="font-family:monospace;color:var(--pur);min-width:34px;text-align:right">+0</span>
+        </div>
+
         <!-- IV Surface selector -->
-        <label class="lbl" style="margin-top:8px">IV Surface — OTM/ITM Pricing</label>
+        <label class="lbl" style="margin-top:4px">IV Surface — Strike Shape</label>
         <div style="font-size:8px;color:var(--mut);margin-bottom:3px;line-height:1.4">
-          Controls how IV varies across <em>strikes</em> at a given spot (shape of the smile).
-          Separate from the vol-correlation band below.
+          Controls how IV varies across <em>strikes</em> at a given expiry (shape of the smile).
         </div>
         <div style="display:flex;gap:3px;margin-bottom:4px">
           <button id="ivsFlatBtn" onclick="setIVSurface('flat')"
@@ -1092,6 +1104,7 @@ const state={
   ivSurface:'flat',  // 'flat' | 'smile'  — IV model used for P&L + heatmap
   smileSkew:-0.12,   // log-moneyness skew (<0 = put skew, typical for equities)
   smileConv:0.20,    // convexity / curvature of the smile
+  termSlope:0,       // term-structure exponent ζ: σ(T) = σ_ref × (T_ref/T)^ζ, T_ref = 30d
   liveSource:'yahoo',  // 'yahoo' | 'saxo'
   saxoToken:'',        // Saxo access token (session memory only, never persisted)
   saxoEnv:'live',      // always use live endpoint
@@ -1173,6 +1186,18 @@ function dteSuffix(exp){
   const d=Math.max(0,Math.round(ms/(1000*60*60*24)));
   return ` (${d}d)`;
 }
+
+// ── ATM IV term structure: power-law model ──
+// σ_ATM(T) = state.iv × (T_ref/T)^ζ   where T_ref = 30 days
+// ζ > 0 → inverted term structure (short-dated IV > long-dated) — typical MSTR
+// ζ = 0 → flat (current behavior, always)
+// ζ < 0 → contango (long-dated IV > short-dated)
+const _TERM_REF = 30/365; // 30-day reference tenor
+function atmIV(T){
+  if(state.termSlope===0||T<=0) return state.iv;
+  return state.iv * Math.pow(_TERM_REF / Math.max(T, 1/365), state.termSlope);
+}
+
 // Entry price of a leg (stored or computed at current params)
 function entryPx(leg){
   return leg.prem??bsPrice(state.spot,leg.K,getT(leg.exp),state.rate,state.iv,leg.type);
@@ -1338,7 +1363,7 @@ function leapAddToLegs(K,exp,qty){
 // ═══════════════════════════════════════════════════════
 function setLiveLock(locked){
   const ids=['sSpot','iSpot','sIV','iIV','iRate','iDate',
-             'ivsFlatBtn','ivsSmileBtn','smileSkewIn','smileConvIn'];
+             'ivsFlatBtn','ivsSmileBtn','smileSkewIn','smileConvIn','termSlopeIn'];
   ids.forEach(id=>{
     const el=document.getElementById(id);
     if(!el) return;
@@ -2540,22 +2565,23 @@ function marketIV(K,expiry,type){
 }
 
 // ── scenarioIV: IV to price a leg at a HYPOTHETICAL scenario spot S ──
-// In 'smile' mode with market data: interpolate from market chain (sticky strike).
-// In 'smile' mode without market data: use parametric model.
-// In 'flat' mode: use ATM IV (state.iv), scaled by ratio if IV slider moved.
+// In 'smile' mode with market data: interpolate from market chain (sticky strike),
+//   scaled by state.iv/atmMkt so the IV slider still works as a uniform shift.
+// In 'smile' mode without market data: parametric smile with per-expiry ATM IV.
+// In 'flat' mode: per-expiry ATM IV from term structure model (atmIV).
 function scenarioIV(l,S){
+  const T=getT(l.exp);
+  const baseIV=atmIV(T); // per-expiry ATM IV from term structure
   if(state.ivSurface==='smile'){
-    // Try market IV for this leg's expiry and type
     const miv=marketIV(l.K,l.exp,l.type);
     if(miv!==null){
-      // Scale by current state.iv / ATM market IV so the IV slider still works
       const atmMkt=marketIV(state.spot,l.exp,'call')||marketIV(state.spot,l.exp,'put')||state.iv;
-      return miv*(state.iv/atmMkt);
+      // Scale market IV so IV slider shifts the whole surface; term structure via atmMkt ratio
+      return miv*(baseIV/atmMkt);
     }
-    // Fallback: parametric model
-    return smileIV(l.K,S,state.iv);
+    return smileIV(l.K,S,baseIV);
   }
-  return state.iv;
+  return baseIV; // flat mode — just the per-expiry ATM IV
 }
 
 function renderSmileChart(){
@@ -2604,21 +2630,43 @@ function renderSmileChart(){
     });
   }
 
-  // 2. Parameterised smile (model) — reference only when market data loaded
-  datasets.push({
-    label:`Parametric model (skew=${state.smileSkew.toFixed(2)}, conv=${state.smileConv.toFixed(2)})${!hasMarket&&usedForPnl?' ← used for P&L':''}`,
-    data:strikes.map(K=>smileIV(K,S,iv)*100),
-    borderColor:'#58a6ff',backgroundColor:'rgba(88,166,255,0.04)',
-    borderWidth:hasMarket?1:usedForPnl?2.5:1.5,borderDash:hasMarket?[3,3]:undefined,
-    pointRadius:0,tension:0.4,fill:hasMarket?false:true,
-  });
+  // 2. Sim mode curves: show multiple expiries using term structure + smile model
+  if(!hasMarket){
+    // Pick a set of representative expiry tenors (in years) to illustrate term structure
+    const simTenors=[7,30,60,90,180,365].map(d=>d/365);
+    const tenorColors=['#f78166','#ffa657','#e3b341','#7ee787','#79c0ff','#d2a8ff'];
+    const ζ=state.termSlope;
+    simTenors.forEach((T,i)=>{
+      const aiv=atmIV(T);
+      const dte=Math.round(T*365);
+      const isRef=dte===30;
+      const label=usedForPnl
+        ?`${dte}d — ATM ${(aiv*100).toFixed(0)}%${isRef?' (ref)':''} ← used`
+        :`${dte}d — ATM ${(aiv*100).toFixed(0)}%${isRef?' (ref)':''}`;
+      datasets.push({
+        label,
+        data:strikes.map(K=>usedForPnl?smileIV(K,S,aiv)*100:aiv*100),
+        borderColor:tenorColors[i],backgroundColor:'transparent',
+        borderWidth:isRef?2:1,borderDash:isRef?undefined:[3,2],
+        pointRadius:0,tension:0.3,fill:false,
+      });
+    });
+  } else {
+    // With market data: parametric model as dotted reference
+    datasets.push({
+      label:`Parametric model (skew=${state.smileSkew.toFixed(2)}, conv=${state.smileConv.toFixed(2)})`,
+      data:strikes.map(K=>smileIV(K,S,iv)*100),
+      borderColor:'#58a6ff',backgroundColor:'transparent',
+      borderWidth:1,borderDash:[3,3],pointRadius:0,tension:0.4,fill:false,
+    });
+  }
 
-  // 4. Flat IV line (current global setting)
+  // 4. Reference ATM IV line (30d anchor point)
   datasets.push({
-    label:`Flat IV ${(iv*100).toFixed(0)}%${!usedForPnl?' ← used for P&L':''}`,
+    label:`ATM IV ${(iv*100).toFixed(0)}% @ 30d ref`,
     data:strikes.map(()=>iv*100),
     borderColor:'#8b949e',backgroundColor:'transparent',
-    borderWidth:usedForPnl?1:2,borderDash:[5,4],pointRadius:0,tension:0,
+    borderWidth:1,borderDash:[5,4],pointRadius:0,tension:0,
   });
 
   // 5. Back-solved IVs from user-entered leg prices
