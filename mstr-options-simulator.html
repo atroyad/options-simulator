@@ -774,6 +774,8 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
             style="padding:2px 8px;font-size:9px;border:none;cursor:pointer;background:var(--blu);color:#000;font-weight:700">Normalized</button>
           <button id="cmpTabStk" onclick="setCmpView('stk')"
             style="padding:2px 8px;font-size:9px;border:none;cursor:pointer;background:var(--sur2);color:var(--mut)">Per-Option</button>
+          <button id="cmpTabAct" onclick="setCmpView('actual')"
+            style="padding:2px 8px;font-size:9px;border:none;cursor:pointer;background:var(--sur2);color:var(--mut)">Actual T</button>
         </div>
         <!-- Call/Put filter -->
         <div style="display:flex;gap:2px;flex-shrink:0">
@@ -814,6 +816,13 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
             <div><canvas id="cmpStkGammaChart"></canvas></div>
             <div><canvas id="cmpStkThetaChart"></canvas></div>
             <div><canvas id="cmpStkVegaChart"></canvas></div>
+          </div>
+          <!-- Actual T view (price-normalized, T = actual matched expiry DTE) -->
+          <div class="greeks-grid" id="cmpActGrid" style="display:none">
+            <div><canvas id="cmpActDeltaChart"></canvas></div>
+            <div><canvas id="cmpActGammaChart"></canvas></div>
+            <div><canvas id="cmpActThetaChart"></canvas></div>
+            <div><canvas id="cmpActVegaChart"></canvas></div>
           </div>
         </div>
       </div>
@@ -4444,18 +4453,23 @@ function renderGreeksDashboard(){
 const _compareStocks=[]; // [{ticker, spot, chain}]
 const _cmpCharts={};
 const _CMP_COLORS=['#58a6ff','#3fb950','#f78166','#d2a8ff','#ffa657','#79c0ff','#56d364','#ff7b72'];
-let _cmpView='norm';  // 'norm' | 'stk'
+let _cmpView='norm';  // 'norm' | 'stk' | 'actual'
 let _cmpFilter='all'; // 'all' | 'call' | 'put'
 
 function setCmpView(v){
   _cmpView=v;
-  const isNorm=v==='norm';
-  document.getElementById('cmpTabNorm').style.background=isNorm?'var(--blu)':'var(--sur2)';
-  document.getElementById('cmpTabNorm').style.color     =isNorm?'#000':'var(--mut)';
-  document.getElementById('cmpTabNorm').style.fontWeight=isNorm?'700':'400';
-  document.getElementById('cmpTabStk').style.background =isNorm?'var(--sur2)':'var(--pur)';
-  document.getElementById('cmpTabStk').style.color      =isNorm?'var(--mut)':'#000';
-  document.getElementById('cmpTabStk').style.fontWeight =isNorm?'400':'700';
+  const tabs=[
+    {id:'cmpTabNorm', val:'norm',   bg:'var(--blu)', color:'#000'},
+    {id:'cmpTabStk',  val:'stk',    bg:'var(--pur)', color:'#000'},
+    {id:'cmpTabAct',  val:'actual', bg:'var(--ylw)', color:'#000'},
+  ];
+  tabs.forEach(t=>{
+    const el=document.getElementById(t.id); if(!el) return;
+    const active=t.val===v;
+    el.style.background=active?t.bg:'var(--sur2)';
+    el.style.color     =active?t.color:'var(--mut)';
+    el.style.fontWeight=active?'700':'400';
+  });
   if(_compareStocks.length) renderGreeksComparison();
 }
 
@@ -4472,7 +4486,7 @@ function clearCompareFiles(){
   _compareStocks.length=0;
   document.getElementById('compareFileInput').value='';
   document.getElementById('compareStatus').textContent='';
-  ['cmpGrid','cmpStkGrid'].forEach(id=>{
+  ['cmpGrid','cmpStkGrid','cmpActGrid'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.style.display='none';
   });
   const ph=document.getElementById('cmpPlaceholder');
@@ -4510,19 +4524,23 @@ function renderGreeksComparison(){
   const targetDTE=+(document.getElementById('compareDTE')?.value||7);
   if(!_compareStocks.length) return;
 
-  // Show only the active grid; hide the other
+  // Show only the active grid; hide others
   const ph=document.getElementById('cmpPlaceholder');
   if(ph) ph.style.display='none';
-  const normGrid=document.getElementById('cmpGrid');
-  const stkGrid=document.getElementById('cmpStkGrid');
-  if(normGrid) normGrid.style.display=_cmpView==='norm'?'':'none';
-  if(stkGrid)  stkGrid.style.display =_cmpView==='stk' ?'':'none';
+  ['cmpGrid','cmpStkGrid','cmpActGrid'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.style.display=(
+      (id==='cmpGrid'    && _cmpView==='norm')   ||
+      (id==='cmpStkGrid' && _cmpView==='stk')    ||
+      (id==='cmpActGrid' && _cmpView==='actual')
+    ) ? '' : 'none';
+  });
 
   // Build moneyness grid 0.4 … 2.0 in steps of 0.025
   const mLo=0.40, mHi=2.00, mStep=0.025;
   const moneyness=[];
   for(let m=mLo;m<=mHi+0.001;m+=mStep) moneyness.push(+m.toFixed(3));
-  const T=targetDTE/365;
+  const targetT=targetDTE/365;  // used by norm + stk views
 
   // Helper: for a stock, find best expiry and build IV lookups
   function stkExpIV(stk){
@@ -4541,12 +4559,15 @@ function renderGreeksComparison(){
     return{S,ivLookup,actualDTE,bestExp};
   }
 
-  // Helper: build datasets for one chart configuration, respecting _cmpFilter
-  function buildDatasets(cfgNorm){
+  // Helper: build datasets.
+  // cfgNorm.key = greek key; cfgNorm(v,S) = normalization fn
+  // getT(actualDTE) = function returning the T to use for BS — lets each view control it
+  function buildDatasets(cfgNorm, getT){
     const types=_cmpFilter==='all'?['call','put']:_cmpFilter==='call'?['call']:['put'];
     const datasets=[];
     _compareStocks.forEach((stk,si)=>{
       const{S,ivLookup,actualDTE,bestExp}=stkExpIV(stk);
+      const T=getT(actualDTE);
       types.forEach(type=>{
         const strikes=Object.keys(ivLookup[type]).map(Number).sort((a,b)=>a-b);
         if(!strikes.length) return;
@@ -4613,37 +4634,58 @@ function renderGreeksComparison(){
   }
 
   const fmt4=v=>v.toFixed(4);
+  // Canvas IDs grouped by view — used to destroy inactive charts
+  const normIds=['cmpDeltaChart','cmpGammaChart','cmpThetaChart','cmpVegaChart'];
+  const stkIds =['cmpStkDeltaChart','cmpStkGammaChart','cmpStkThetaChart','cmpStkVegaChart'];
+  const actIds =['cmpActDeltaChart','cmpActGammaChart','cmpActThetaChart','cmpActVegaChart'];
+  function destroyCharts(ids){ ids.forEach(id=>{if(_cmpCharts[id]){_cmpCharts[id].destroy();delete _cmpCharts[id];}}); }
 
   if(_cmpView==='norm'){
-    // ── Normalized view (Γ×S, Θ÷S, ν÷S) — for cross-stock comparison ──
-    const normCfgs=[
-      {id:'cmpDeltaChart', key:'delta', norm:(v,S)=>v,   unit:'Δ (norm)',     },
-      {id:'cmpGammaChart', key:'gamma', norm:(v,S)=>v*S, unit:'Γ × Spot',     },
-      {id:'cmpThetaChart', key:'theta', norm:(v,S)=>v/S, unit:'Θ/S per day',  },
-      {id:'cmpVegaChart',  key:'vega',  norm:(v,S)=>v/S, unit:'ν/S per 1%IV', },
+    // ── Normalized (T = targetDTE/365, Greeks ÷ or × spot) ──
+    const cfgs=[
+      {id:'cmpDeltaChart', key:'delta', norm:(v,S)=>v,   unit:'Δ (norm)'},
+      {id:'cmpGammaChart', key:'gamma', norm:(v,S)=>v*S, unit:'Γ × Spot'},
+      {id:'cmpThetaChart', key:'theta', norm:(v,S)=>v/S, unit:'Θ/S per day'},
+      {id:'cmpVegaChart',  key:'vega',  norm:(v,S)=>v/S, unit:'ν/S per 1%IV'},
     ];
-    for(const cfg of normCfgs){
+    for(const cfg of cfgs){
       const fn=(v,S)=>cfg.norm(v,S); fn.key=cfg.key;
-      makeChart(cfg.id, buildDatasets(fn), '', cfg.unit, fmt4);
+      makeChart(cfg.id, buildDatasets(fn, ()=>targetT), '', cfg.unit, fmt4);
     }
-    // Destroy per-option charts (avoid invisible canvas resource leak)
-    ['cmpStkDeltaChart','cmpStkGammaChart','cmpStkThetaChart','cmpStkVegaChart']
-      .forEach(id=>{if(_cmpCharts[id]){_cmpCharts[id].destroy();delete _cmpCharts[id];}});
+    destroyCharts([...stkIds,...actIds]);
+
+  } else if(_cmpView==='stk'){
+    // ── Per-Option (T = targetDTE/365, raw per-share values) ──
+    const cfgs=[
+      {id:'cmpStkDeltaChart', key:'delta', norm:(v,S)=>v, unit:'Δ (per share)'},
+      {id:'cmpStkGammaChart', key:'gamma', norm:(v,S)=>v, unit:'Γ (per share)'},
+      {id:'cmpStkThetaChart', key:'theta', norm:(v,S)=>v, unit:'Θ/day (per share $)'},
+      {id:'cmpStkVegaChart',  key:'vega',  norm:(v,S)=>v, unit:'ν per 1%IV ($)'},
+    ];
+    for(const cfg of cfgs){
+      const fn=(v,S)=>cfg.norm(v,S); fn.key=cfg.key;
+      makeChart(cfg.id, buildDatasets(fn, ()=>targetT), '', cfg.unit, fmt4);
+    }
+    destroyCharts([...normIds,...actIds]);
+
   } else {
-    // ── Per-option view (raw per-share values, same as Greeks tab) ──
-    const rawCfgs=[
-      {id:'cmpStkDeltaChart', key:'delta', norm:(v,S)=>v, unit:'Δ (per share)',      },
-      {id:'cmpStkGammaChart', key:'gamma', norm:(v,S)=>v, unit:'Γ (per share)',       },
-      {id:'cmpStkThetaChart', key:'theta', norm:(v,S)=>v, unit:'Θ/day (per share $)',},
-      {id:'cmpStkVegaChart',  key:'vega',  norm:(v,S)=>v, unit:'ν per 1%IV ($)',     },
+    // ── Actual T (T = actual matched expiry DTE/365 per stock, Greeks ÷ or × spot) ──
+    // This removes the artificial time equalization: each stock uses its own expiry's true T.
+    // Gamma and Vega scale with sqrt(T); Theta scales with 1/sqrt(T) — so shorter expiries
+    // show higher gamma/vega per unit moneyness, and steeper theta. Price normalization (÷S)
+    // keeps different-priced underlyings on the same axis.
+    const cfgs=[
+      {id:'cmpActDeltaChart', key:'delta', norm:(v,S)=>v,   unit:'Δ (norm · actual T)'},
+      {id:'cmpActGammaChart', key:'gamma', norm:(v,S)=>v*S, unit:'Γ × Spot (actual T)'},
+      {id:'cmpActThetaChart', key:'theta', norm:(v,S)=>v/S, unit:'Θ/S per day (actual T)'},
+      {id:'cmpActVegaChart',  key:'vega',  norm:(v,S)=>v/S, unit:'ν/S per 1%IV (actual T)'},
     ];
-    for(const cfg of rawCfgs){
+    for(const cfg of cfgs){
       const fn=(v,S)=>cfg.norm(v,S); fn.key=cfg.key;
-      makeChart(cfg.id, buildDatasets(fn), '', cfg.unit, fmt4);
+      // getT receives actualDTE for this stock — use it directly
+      makeChart(cfg.id, buildDatasets(fn, aDTE=>Math.max(1/365, aDTE/365)), '', cfg.unit, fmt4);
     }
-    // Destroy normalized charts
-    ['cmpDeltaChart','cmpGammaChart','cmpThetaChart','cmpVegaChart']
-      .forEach(id=>{if(_cmpCharts[id]){_cmpCharts[id].destroy();delete _cmpCharts[id];}});
+    destroyCharts([...normIds,...stkIds]);
   }
 }
 
