@@ -316,15 +316,26 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
           <input id="sidebarTicker" type="text" value="MSTR" placeholder="e.g. AAPL"
             style="text-transform:uppercase;font-weight:700;letter-spacing:1px"
             oninput="setTicker(this.value)"
-            title="Enter any US stock ticker (e.g. AAPL, TSLA, NVDA)">
+            title="Enter any US stock ticker — used in Live mode only">
           <span id="tickerCurrencyLabel" style="font-size:9px;color:var(--mut);white-space:nowrap">US stock</span>
         </div>
         <label class="lbl" id="spotLabel">Spot Price (USD)</label>
-        <div class="row">
-          <input type="range" id="sSpot" min="10" max="600" step="1" value="200" oninput="syncSpot(this.value)">
-          <span class="pval" id="dSpot">$200</span>
+        <div class="row" style="gap:5px;margin-bottom:2px">
+          <span style="font-size:9px;color:var(--mut);white-space:nowrap">Base:</span>
+          <input type="number" id="iSpotBase" value="200" step="5" min="1"
+            style="flex:1;min-width:0"
+            onchange="setSpotBase(+this.value)"
+            title="Set baseline — slider adjusts ±% from here">
+          <span class="pval" id="dSpot" style="min-width:52px">$200</span>
         </div>
-        <input type="number" id="iSpot" value="200" step="5" min="1" onchange="syncSpot(this.value)" style="margin-top:3px">
+        <div class="row" style="gap:4px;align-items:center">
+          <span style="font-size:9px;color:var(--mut);white-space:nowrap" id="spotOffLabel">±0%</span>
+          <input type="range" id="sSpot" min="-50" max="50" step="1" value="0"
+            style="flex:1" oninput="syncSpotOffset(+this.value)">
+        </div>
+        <input type="number" id="iSpot" value="200" step="1" min="1"
+          onchange="syncSpot(this.value);setSpotBase(+this.value)" style="margin-top:3px"
+          title="Current spot — also resets baseline">
 
         <label class="lbl">Implied Volatility %</label>
         <div class="row">
@@ -337,10 +348,6 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
           <div>
             <label class="lbl">Risk-Free Rate %</label>
             <input type="number" id="iRate" value="4.5" step="0.25" min="0" onchange="state.rate=+this.value/100;renderAll()">
-          </div>
-          <div>
-            <label class="lbl">Sim Date</label>
-            <input type="date" id="iDate" value="2026-04-09" onchange="state.simDate=new Date(this.value+'T12:00:00');renderAll()">
           </div>
         </div>
 
@@ -782,11 +789,21 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
             Upload JSON exports from the Prices tab to compare Greeks across stocks.<br>
             Delta is unitless · Gamma × Spot · Theta ÷ Spot · Vega ÷ Spot
           </div>
+          <!-- Normalized view (Gamma×S, Theta÷S, Vega÷S) -->
+          <div style="font-size:8px;color:var(--mut);margin:4px 0 2px;display:none" id="cmpNormLabel">Normalized (Γ×S · Θ÷S · ν÷S) — moneyness x-axis</div>
           <div class="greeks-grid" id="cmpGrid" style="display:none">
             <div><canvas id="cmpDeltaChart"></canvas></div>
             <div><canvas id="cmpGammaChart"></canvas></div>
             <div><canvas id="cmpThetaChart"></canvas></div>
             <div><canvas id="cmpVegaChart"></canvas></div>
+          </div>
+          <!-- Per-option view (same as Greeks tab) -->
+          <div style="font-size:8px;color:var(--mut);margin:10px 0 2px;display:none" id="cmpStkLabel">Per-Option Greeks (per share) — moneyness x-axis</div>
+          <div class="greeks-grid" id="cmpStkGrid" style="display:none">
+            <div><canvas id="cmpStkDeltaChart"></canvas></div>
+            <div><canvas id="cmpStkGammaChart"></canvas></div>
+            <div><canvas id="cmpStkThetaChart"></canvas></div>
+            <div><canvas id="cmpStkVegaChart"></canvas></div>
           </div>
         </div>
       </div>
@@ -948,7 +965,7 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
               <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Δ</th>
               <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Θ/day</th>
               <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Vega</th>
-              <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">MoM%</th>
+              <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)">Moneyness</th>
               <th style="padding:3px 5px;text-align:right;color:var(--mut);font-weight:600;border-bottom:1px solid var(--bdr)"></th>
             </tr>
           </thead>
@@ -1193,7 +1210,7 @@ const leapBids={};
 const rsState={type:'call', action:'buy', K0:160, prem0:2.20, S1:150, iv1:120, dte1:30, dte2:60};
 
 function getT(exp){
-  return Math.max(0,(new Date(exp+'T21:00:00')-state.simDate)/(1000*60*60*24*365));
+  return Math.max(0,(new Date(exp+'T21:00:00')-new Date())/(1000*60*60*24*365));
 }
 function dteSuffix(exp){
   // Returns e.g. " (7d)" or " (0d)" for same-day
@@ -1377,8 +1394,8 @@ function leapAddToLegs(K,exp,qty){
 // LIVE DATA LOCK — grey out sim controls when live data loaded
 // ═══════════════════════════════════════════════════════
 function setLiveLock(locked){
-  const ids=['sSpot','iSpot','sIV','iIV','iRate','iDate',
-             'ivsFlatBtn','ivsSmileBtn','smileSkewIn','smileConvIn','termSlopeIn'];
+  const ids=['sSpot','iSpot','sIV','iIV','iRate',
+             'ivsFlatBtn','ivsSmileBtn','smileSkewIn','smileConvIn','termSlopeIn','iSpotBase'];
   ids.forEach(id=>{
     const el=document.getElementById(id);
     if(!el) return;
@@ -1413,6 +1430,15 @@ function setPriceFilter(f){
     if(el) el.classList.toggle('on',k===f);
   });
   renderPricesTable();
+}
+
+// Moneyness label + color for prices table
+function moneynessCell(K,S,type){
+  const pct=type==='call'?(S-K)/S*100:(K-S)/S*100; // positive = ITM
+  const abs=Math.abs(pct).toFixed(1);
+  if(Math.abs(pct)<2) return{label:'ATM',color:'var(--blu)'};
+  if(pct>0) return{label:`ITM −${abs}%`,color:'var(--red)'};
+  return{label:`OTM +${abs}%`,color:'var(--grn)'};
 }
 
 // Generate standard option expiry dates (3rd Friday of each month) for the next N months
@@ -1474,17 +1500,16 @@ function renderPricesTable(){
     _priceRows=rows;
     const spot=S;
     tbody.innerHTML=rows.map((o,idx)=>{
-      const moneyness=o.type==='call'?(spot-o.K)/spot*100:(o.K-spot)/spot*100;
-      const itm=moneyness>0;
-      const atmish=Math.abs(o.K-spot)/spot<0.04;
-      const rowBg=atmish?'background:var(--sur2)':'';
+      const mc=moneynessCell(o.K,spot,o.type);
+      const atmish=mc.label==='ATM';
+      const rowBg=atmish?'background:rgba(88,166,255,.08)':'';
       const typeColor=o.type==='call'?'var(--grn)':'var(--red)';
-      const theta_day=o.theta; // bsAll already per day
-      const vega_pct=o.vega;   // bsAll already per 1%
+      const theta_day=o.theta;
+      const vega_pct=o.vega;
       return `<tr style="${rowBg};border-bottom:1px solid var(--bdr)20">
         <td style="padding:2px 5px;color:${typeColor};font-weight:600">${o.type.toUpperCase()[0]}</td>
         <td style="padding:2px 5px;color:var(--mut);font-size:8px">sim</td>
-        <td style="padding:2px 5px;text-align:right;color:${itm?'var(--ylw)':'var(--txt)'};${itm?'font-weight:600':''}">${o.K}</td>
+        <td style="padding:2px 5px;text-align:right;color:var(--txt)">${o.K}</td>
         <td style="padding:2px 5px;text-align:right;color:var(--mut)">—</td>
         <td style="padding:2px 5px;text-align:right;color:var(--mut)">—</td>
         <td style="padding:2px 5px;text-align:right;color:var(--txt)">${o.price.toFixed(2)}</td>
@@ -1492,7 +1517,7 @@ function renderPricesTable(){
         <td style="padding:2px 5px;text-align:right;color:var(--mut)">${o.delta.toFixed(2)}</td>
         <td style="padding:2px 5px;text-align:right;color:var(--red)">${(theta_day*100).toFixed(2)}¢</td>
         <td style="padding:2px 5px;text-align:right;color:var(--mut)">${vega_pct.toFixed(2)}</td>
-        <td style="padding:2px 5px;text-align:right;color:var(--mut)">—</td>
+        <td style="padding:2px 5px;text-align:right;font-weight:600;white-space:nowrap;color:${mc.color}">${mc.label}</td>
         <td style="padding:2px 5px">
           <button onclick="addLegFromPrice(${idx})"
             style="font-size:8px;padding:1px 5px;border:1px solid var(--bdr);border-radius:2px;background:var(--sur2);color:var(--txt);cursor:pointer">+</button>
@@ -1535,19 +1560,17 @@ function renderPricesTable(){
     const T=Math.max(0,(new Date(o.exp)-new Date())/(365*24*3600*1000));
     const bs=T>0.003?bsAll(S,o.K,T,state.rate,o.iv,o.type):{price:0,delta:0,gamma:0,theta:0,vega:0};
     const delta=bs.delta;
-    const theta=bs.theta/365; // per day
-    const vega=bs.vega/100;   // per 1% IV move
-    const moneyness=o.type==='call'?(S-o.K)/S*100:(o.K-S)/S*100;
-    const itm=moneyness>0;
-    const atmish=Math.abs(o.K-S)/S<0.05;
-    const rowBg=atmish?'background:var(--sur2)':'';
+    const theta=bs.theta/365;
+    const vega=bs.vega/100;
+    const mc=moneynessCell(o.K,S,o.type);
+    const atmish=mc.label==='ATM';
+    const rowBg=atmish?'background:rgba(88,166,255,.08)':'';
     const typeColor=o.type==='call'?'var(--grn)':'var(--red)';
-    const mom=o.mid>0?((Math.max(0,o.type==='call'?S-o.K:o.K-S)-o.mid)/o.mid*100).toFixed(0):'—';
 
     return `<tr style="${rowBg};border-bottom:1px solid var(--bdr)20">
       <td style="padding:2px 5px;color:${typeColor};font-weight:600">${o.type.toUpperCase()[0]}</td>
       <td style="padding:2px 5px;color:var(--txt)">${o.exp}</td>
-      <td style="padding:2px 5px;text-align:right;color:${itm?'var(--ylw)':'var(--txt)'};${itm?'font-weight:600':''}">${o.K}</td>
+      <td style="padding:2px 5px;text-align:right;color:var(--txt)">${o.K}</td>
       <td style="padding:2px 5px;text-align:right;color:var(--grn)">${o.bid>0?o.bid.toFixed(2):'—'}</td>
       <td style="padding:2px 5px;text-align:right;color:var(--red)">${o.ask>0?o.ask.toFixed(2):'—'}</td>
       <td style="padding:2px 5px;text-align:right;color:var(--txt)">${o.mid>0?o.mid.toFixed(2):'—'}</td>
@@ -1555,7 +1578,7 @@ function renderPricesTable(){
       <td style="padding:2px 5px;text-align:right;color:var(--mut)">${delta.toFixed(2)}</td>
       <td style="padding:2px 5px;text-align:right;color:var(--red)">${(theta*100).toFixed(2)}¢</td>
       <td style="padding:2px 5px;text-align:right;color:var(--mut)">${vega.toFixed(2)}</td>
-      <td style="padding:2px 5px;text-align:right;color:${+mom>0?'var(--grn)':+mom<0?'var(--red)':'var(--mut)'}">${mom}%</td>
+      <td style="padding:2px 5px;text-align:right;font-weight:600;white-space:nowrap;color:${mc.color}">${mc.label}</td>
       <td style="padding:2px 5px">
         <button onclick="addLegFromPrice(${idx})"
           style="font-size:8px;padding:1px 5px;border:1px solid var(--bdr);border-radius:2px;background:var(--sur2);color:var(--txt);cursor:pointer">+</button>
@@ -1912,9 +1935,10 @@ function setTicker(raw){
   const si=document.getElementById('sidebarTicker');
   if(hi&&hi.value.toUpperCase()!==t) hi.value=t;
   if(si&&si.value.toUpperCase()!==t) si.value=t;
-  // invalidate Saxo contract cache so next fetch re-discovers for new ticker
+  // invalidate Saxo contract cache and smile fit so next load re-fits for new ticker
   state.saxoContractCache=null;
   state.liveOptions=[];
+  _smileFitted=false;
   // update chart labels
   renderAll();
 }
@@ -1928,12 +1952,15 @@ function setMode(m){
   document.getElementById('modeBadge').style.background=isLive?'var(--grn)':'var(--blu)';
   document.getElementById('liveSrcRow').style.display=isLive?'flex':'none';
   document.getElementById('tickerRow').style.display=isLive?'flex':'none';
+  const tkEl=document.getElementById('sidebarTicker');
+  if(tkEl){tkEl.disabled=!isLive;tkEl.style.opacity=isLive?'':'0.4';tkEl.style.cursor=isLive?'':'default';}
   document.getElementById('liveBtn').style.display=isLive?'':'none';
   document.getElementById('liveStatus').style.display=isLive?'':'none';
   updateSaxoUI();
   if(!isLive){
     setLiveLock(false);
     stopLiveTimer();
+    _smileFitted=false; // reset so next live load re-fits
     // Clear live market data so sim charts don't show stale live overlays
     state.liveOptions=[];
     updateGreeksExpiries();
@@ -2252,15 +2279,14 @@ async function fetchLiveData(){
     const atmCall=nearestCalls.length>0?nearestCalls.reduce((b,o)=>Math.abs(o.strike-spot)<Math.abs(b.strike-spot)?o:b,nearestCalls[0]):null;
     if(atmCall?.impliedVolatility>0) syncIV(Math.round(atmCall.impliedVolatility*100));
 
-    // ── Fit smile parameters to live market data ──
-    const fitPts=state.liveOptions.filter(o=>o.iv>0.10&&o.iv<5.0&&o.bid>0);
-    const smileP=fitSmileParams(fitPts,spot,state.iv);
-    applySmileParams(smileP);
-    if(smileP){
-      status.textContent=`$${spot.toFixed(2)} · ATM IV ${Math.round(state.iv*100)}% · ${state.liveOptions.length} opts · smile fitted (skew=${state.smileSkew}, conv=${state.smileConv}) · ⟳ auto`;
-    } else {
-      status.textContent=`$${spot.toFixed(2)} · ${state.liveOptions.length} options loaded · ⟳ auto`;
+    // ── Fit smile parameters — only on first load, not on auto-refresh ──
+    if(!_smileFitted){
+      const fitPts=state.liveOptions.filter(o=>o.iv>0.10&&o.iv<5.0&&o.bid>0);
+      const smileP=fitSmileParams(fitPts,spot,state.iv);
+      applySmileParams(smileP);
+      if(smileP) _smileFitted=true;
     }
+    status.textContent=`$${spot.toFixed(2)} · ATM IV ${Math.round(state.iv*100)}% · ${state.liveOptions.length} opts${_smileFitted?' · smile fitted':''}  · ⟳ auto`;
     status.style.color='var(--grn)';
     btn.textContent='⟳ Refresh';
     if(state.liveOptions.length>0) setLiveLock(true);
@@ -2334,19 +2360,21 @@ function fitSmileAndFinish(spot,status,btn,note=''){
   const validOpts=state.liveOptions.filter(o=>o.iv>0.05&&o.iv<5);
   const calls=validOpts.filter(o=>o.type==='call');
   const pool=calls.length>0?calls:validOpts;
-  let atmIV=0;
+  let _atmIV=0;
   if(pool.length>0){
     const atm=pool.reduce((b,o)=>Math.abs(o.K-spot)<Math.abs(b.K-spot)?o:b,pool[0]);
-    atmIV=atm.iv;
-    syncIV(Math.round(atmIV*100));
-    console.log(`ATM IV set: ${(atmIV*100).toFixed(1)}% from ${atm.type} K=${atm.K} (pool size ${pool.length})`);
+    _atmIV=atm.iv;
+    syncIV(Math.round(_atmIV*100));
   }
-  // Two-pass ATM-weighted smile fit
-  const fitPts=validOpts.filter(o=>o.bid>0);
-  const smileP=fitSmileParams(fitPts,spot,state.iv);
-  applySmileParams(smileP);
-  const ivStr=atmIV>0?` · ATM IV ${(atmIV*100).toFixed(0)}%`:'';
-  status.textContent=`Saxo: $${spot.toFixed(2)}${ivStr} · ${state.liveOptions.length} opts${note} · smile fitted (skew=${state.smileSkew.toFixed(3)}, conv=${state.smileConv.toFixed(3)}) · ⟳ auto`;
+  // Two-pass ATM-weighted smile fit — only on first load
+  if(!_smileFitted){
+    const fitPts=validOpts.filter(o=>o.bid>0);
+    const smileP=fitSmileParams(fitPts,spot,state.iv);
+    applySmileParams(smileP);
+    if(smileP) _smileFitted=true;
+  }
+  const ivStr=_atmIV>0?` · ATM IV ${(_atmIV*100).toFixed(0)}%`:'';
+  status.textContent=`Saxo: $${spot.toFixed(2)}${ivStr} · ${state.liveOptions.length} opts${note}${_smileFitted?' · smile fitted':''} · ⟳ auto`;
   status.style.color='var(--grn)';
   btn.textContent='⟳ Refresh';btn.disabled=false;
   if(state.liveOptions.length>0) setLiveLock(true);
@@ -2593,7 +2621,8 @@ function setChartView(v){
   document.getElementById('chartTitle').textContent=
     isPnl?`Options P&L vs ${state.ticker||'Spot'} Price`:'Implied Volatility vs Strike (Vol Smile)';
   if(chart){chart.destroy();chart=null;}
-  renderChart();
+  // Defer one frame so show/hide CSS changes settle before Chart.js measures canvas size
+  requestAnimationFrame(()=>renderChart());
 }
 
 function setIVSurface(v){
@@ -4052,11 +4081,31 @@ function onRangePctSlider(prefix,pct){
     renderGreeksDashboard();
   }
 }
+let _spotBase=200; // baseline for the ±% slider
+function setSpotBase(v){
+  _spotBase=Math.max(1,+v);
+  document.getElementById('iSpotBase').value=_spotBase;
+  document.getElementById('sSpot').value=0; // reset offset to 0
+  document.getElementById('spotOffLabel').textContent='±0%';
+  syncSpot(_spotBase);
+}
+function syncSpotOffset(pct){
+  const spot=Math.max(1,Math.round(_spotBase*(1+pct/100)*100)/100);
+  document.getElementById('spotOffLabel').textContent=(pct>=0?'+':'')+pct+'%';
+  state.spot=spot;
+  document.getElementById('dSpot').textContent='$'+spot;
+  document.getElementById('iSpot').value=spot;
+  initHmRange();
+  renderAll();
+}
 function syncSpot(v){
-  state.spot=+v;
-  document.getElementById('dSpot').textContent='$'+v;
-  document.getElementById('sSpot').value=v;
-  document.getElementById('iSpot').value=v;
+  _spotBase=Math.max(1,+v); // typing a value resets baseline too
+  state.spot=_spotBase;
+  document.getElementById('dSpot').textContent='$'+_spotBase;
+  document.getElementById('sSpot').value=0;
+  document.getElementById('spotOffLabel').textContent='±0%';
+  document.getElementById('iSpot').value=_spotBase;
+  document.getElementById('iSpotBase').value=_spotBase;
   initHmRange();
   renderAll();
 }
@@ -4075,6 +4124,7 @@ function togLine(btn){
 // ═══════════════════════════════════════════════════════
 // GREEKS DASHBOARD
 // ═══════════════════════════════════════════════════════
+let _smileFitted=false; // true after first auto-fit; prevents re-fitting on auto-refresh
 let _greeksCharts={};
 let _greeksFilter='all'; // 'all' | 'call' | 'put'
 
@@ -4089,7 +4139,13 @@ function setGreeksFilter(f){
 function updateGreeksExpiries(){
   const sel=document.getElementById('greeksExpiry');
   if(!sel) return;
-  const src=state.liveOptions.length>0?state.liveOptions:state.legs;
+  // In sim mode with no live data and no legs, generate standard expiries from model
+  let src=state.liveOptions.length>0?state.liveOptions:state.legs;
+  let simExpMode=false;
+  if(src.length===0&&state.mode==='sim'){
+    src=stdExpiries(12).map(e=>({exp:e}));
+    simExpMode=true;
+  }
   const exps=[...new Set(src.map(o=>o.exp))].sort();
   const prev=sel.value;
   sel.innerHTML='';
@@ -4113,32 +4169,39 @@ function renderGreeksDashboard(){
   if(!selExp) return;
 
   const useLive=state.liveOptions.length>0;
+  const useSim=!useLive&&state.mode==='sim'&&state.legs.length===0;
 
   // ── Data source ──
-  // liveOptions mode: x-axis = strike, Greek computed at current spot using market IV
-  // Strategy legs mode: x-axis = spot range, portfolio Greeks summed × qty × 100
   const srcLbl=document.getElementById('greeksSrcLabel');
 
-  if(useLive){
-    // ── LIVE MODE: strike on x-axis, one point per option ──
-    if(srcLbl) srcLbl.textContent='Per-share · x = strike · computed at current spot';
+  if(useLive||useSim){
+    // ── LIVE or SIM mode: strike on x-axis, one point per option ──
+    if(srcLbl) srcLbl.textContent=useSim?'Simulated · BS model · x = strike':'Per-share · x = strike · computed at current spot';
 
     const lo=Math.max(1,_gLo||Math.round(spot*0.5));
     const hi=Math.max(lo+1,_gHi||Math.round(spot*1.5));
 
-    // Get all options for selected expiry, sorted by strike
-    const callOpts=state.liveOptions
+    const T=getT(selExp);
+    if(T<=0){ if(srcLbl) srcLbl.textContent='Expired'; return; }
+
+    // Build option list — live market data OR synthetic BS grid in sim mode
+    let optSource=state.liveOptions;
+    if(useSim){
+      const strikes=simStrikeGrid(spot).filter(K=>K>=lo&&K<=hi);
+      optSource=[];
+      for(const K of strikes){
+        const iv=state.ivSurface==='smile'?smileIV(K,spot,atmIV(T)):atmIV(T);
+        optSource.push({K,iv,type:'call',exp:selExp});
+        optSource.push({K,iv,type:'put', exp:selExp});
+      }
+    }
+
+    const callOpts=optSource
       .filter(o=>o.exp===selExp&&o.type==='call'&&o.K>=lo&&o.K<=hi&&(_greeksFilter==='all'||_greeksFilter==='call'))
       .sort((a,b)=>a.K-b.K);
-    const putOpts=state.liveOptions
+    const putOpts=optSource
       .filter(o=>o.exp===selExp&&o.type==='put'&&o.K>=lo&&o.K<=hi&&(_greeksFilter==='all'||_greeksFilter==='put'))
       .sort((a,b)=>a.K-b.K);
-
-    const T=getT(selExp);
-    if(T<=0){
-      if(srcLbl) srcLbl.textContent='Expired';
-      return;
-    }
 
     function greekPoints(opts){
       return {
@@ -4342,9 +4405,10 @@ function clearCompareFiles(){
   _compareStocks.length=0;
   document.getElementById('compareFileInput').value='';
   document.getElementById('compareStatus').textContent='';
-  const grid=document.getElementById('cmpGrid');
+  ['cmpGrid','cmpStkGrid','cmpNormLabel','cmpStkLabel'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.style.display='none';
+  });
   const ph=document.getElementById('cmpPlaceholder');
-  if(grid) grid.style.display='none';
   if(ph) ph.style.display='';
   Object.keys(_cmpCharts).forEach(k=>{if(_cmpCharts[k]){_cmpCharts[k].destroy();delete _cmpCharts[k];}});
 }
@@ -4372,9 +4436,14 @@ async function loadCompareFiles(files){
 function renderGreeksComparison(){
   const targetDTE=+(document.getElementById('compareDTE')?.value||7);
   if(!_compareStocks.length) return;
-  const grid=document.getElementById('cmpGrid');
+  // Show grids, hide placeholder, show section labels
+  ['cmpGrid','cmpStkGrid'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.style.display='';
+  });
+  ['cmpNormLabel','cmpStkLabel'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.style.display='';
+  });
   const ph=document.getElementById('cmpPlaceholder');
-  if(grid) grid.style.display='';
   if(ph) ph.style.display='none';
 
   // Build moneyness grid 0.4 … 2.0 in steps of 0.025
@@ -4383,67 +4452,60 @@ function renderGreeksComparison(){
   for(let m=mLo;m<=mHi+0.001;m+=mStep) moneyness.push(+m.toFixed(3));
   const T=targetDTE/365;
 
-  const cfgs=[
-    {id:'cmpDeltaChart',label:'Delta Δ',      unit:'Δ (norm)',       key:'delta',  norm:(v,S)=>v},
-    {id:'cmpGammaChart',label:'Gamma Γ',      unit:'Γ × Spot',       key:'gamma',  norm:(v,S)=>v*S},
-    {id:'cmpThetaChart',label:'Theta Θ/day',  unit:'Θ/S per day',    key:'theta',  norm:(v,S)=>v/S},
-    {id:'cmpVegaChart', label:'Vega ν',        unit:'ν/S per 1%IV',   key:'vega',   norm:(v,S)=>v/S},
-  ];
+  // Helper: for a stock, find best expiry and build IV lookups
+  function stkExpIV(stk){
+    const S=stk.spot;
+    const exps=Object.keys(stk.chain).sort();
+    let bestExp=exps[0], bestDiff=Infinity;
+    for(const e of exps){
+      const d=Math.abs((new Date(e+'T21:00:00')-new Date())/86400000-targetDTE);
+      if(d<bestDiff){bestDiff=d;bestExp=e;}
+    }
+    const expData=stk.chain[bestExp];
+    const actualDTE=Math.round((new Date(bestExp+'T21:00:00')-new Date())/86400000);
+    const ivLookup={call:{},put:{}};
+    for(const o of (expData?.calls||[])) ivLookup.call[o.K]=o.iv/100;
+    for(const o of (expData?.puts ||[])) ivLookup.put[o.K] =o.iv/100;
+    return{S,ivLookup,actualDTE};
+  }
 
-  chartsDiv.style.display='';
-
-  for(const cfg of cfgs){
-    const canvas=document.getElementById(cfg.id);
-    if(!canvas) continue;
-    if(_cmpCharts[cfg.id]){_cmpCharts[cfg.id].destroy();delete _cmpCharts[cfg.id];}
-
+  // Helper: build datasets for one chart configuration
+  function buildDatasets(cfgNorm){
     const datasets=[];
     _compareStocks.forEach((stk,si)=>{
-      const S=stk.spot;
-      // Find expiry closest to target DTE
-      const exps=Object.keys(stk.chain).sort();
-      let bestExp=exps[0], bestDiff=Infinity;
-      for(const e of exps){
-        const d=Math.abs((new Date(e+'T21:00:00')-new Date())/(86400000)-targetDTE);
-        if(d<bestDiff){bestDiff=d;bestExp=e;}
-      }
-      const expData=stk.chain[bestExp];
-      const actualDTE=Math.round((new Date(bestExp+'T21:00:00')-new Date())/86400000);
-
-      // Build IV lookup: for each type, K→iv (as fraction 0-5)
-      const ivLookup={call:{},put:{}};
-      for(const o of (expData?.calls||[])) ivLookup.call[o.K]=o.iv/100;
-      for(const o of (expData?.puts ||[])) ivLookup.put[o.K] =o.iv/100;
-
-      // For each moneyness point, find nearest actual strike and compute Greek
+      const{S,ivLookup,actualDTE}=stkExpIV(stk);
       ['call','put'].forEach(type=>{
         const strikes=Object.keys(ivLookup[type]).map(Number).sort((a,b)=>a-b);
         if(!strikes.length) return;
         const color=_CMP_COLORS[(si*2+(type==='put'?1:0))%_CMP_COLORS.length];
         const data=moneyness.map(m=>{
           const K=m*S;
-          // Find nearest strike
           let best=strikes[0],bestD=Infinity;
           for(const sk of strikes){const d=Math.abs(sk-K);if(d<bestD){bestD=d;best=sk;}}
-          if(bestD>S*0.15) return null; // too far, skip
+          if(bestD>S*0.15) return null;
           const iv=ivLookup[type][best];
           if(!iv||iv<0.01) return null;
           const gr=bsAll(S,best,T,0.045,iv,type);
-          return +cfg.norm(gr[cfg.key],S).toFixed(5);
+          return +cfgNorm(gr[cfgNorm.key],S).toFixed(5);
         });
         datasets.push({
           label:`${stk.ticker} ${type}s (${actualDTE}d)`,
-          data, borderColor:color,
-          backgroundColor:color+'22',
+          data, borderColor:color, backgroundColor:color+'22',
           borderWidth:1.5, pointRadius:0, pointHoverRadius:3,
           fill:false, tension:0.3,
           borderDash:type==='put'?[4,2]:undefined,
         });
       });
     });
+    return datasets;
+  }
 
+  function makeChart(canvasId,datasets,yLabel,xTitle,yTitle,tooltipFmt){
+    const canvas=document.getElementById(canvasId);
+    if(!canvas) return;
+    if(_cmpCharts[canvasId]){_cmpCharts[canvasId].destroy();delete _cmpCharts[canvasId];}
     const labels=moneyness.map(m=>m.toFixed(2)+'×');
-    _cmpCharts[cfg.id]=new Chart(canvas,{
+    _cmpCharts[canvasId]=new Chart(canvas,{
       type:'line',
       data:{labels,datasets},
       options:{
@@ -4455,7 +4517,7 @@ function renderGreeksComparison(){
             titleColor:'#c9d1d9',bodyColor:'#8b949e',
             callbacks:{
               title:i=>`K/S = ${i[0].label}`,
-              label:i=>`${i.dataset.label}: ${i.raw===null?'—':i.raw.toFixed(4)}`,
+              label:i=>`${i.dataset.label}: ${i.raw===null?'—':tooltipFmt(i.raw)}`,
             }
           },
         },
@@ -4463,10 +4525,10 @@ function renderGreeksComparison(){
           x:{
             ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:9,autoSkip:true,maxRotation:0},
             grid:{color:'#21262d'},border:{color:'#30363d'},
-            title:{display:true,text:'Moneyness K/S',color:'#8b949e',font:{size:7}},
+            title:{display:true,text:xTitle,color:'#8b949e',font:{size:7}},
           },
           y:{
-            title:{display:true,text:cfg.unit,color:'#8b949e',font:{size:7}},
+            title:{display:true,text:yTitle,color:'#8b949e',font:{size:7}},
             ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:5,
               callback:v=>v===null?'':v.toFixed(3)},
             grid:{color:ctx=>ctx.tick.value===0?'rgba(255,255,255,0.25)':'#21262d'},
@@ -4475,6 +4537,32 @@ function renderGreeksComparison(){
         }
       }
     });
+  }
+
+  const fmt4=v=>v.toFixed(4);
+
+  // ── Normalized view (Γ×S, Θ÷S, ν÷S) ──
+  const normCfgs=[
+    {id:'cmpDeltaChart', key:'delta', norm:(v,S)=>v,   unit:'Δ (norm)',      yLbl:'Δ'},
+    {id:'cmpGammaChart', key:'gamma', norm:(v,S)=>v*S, unit:'Γ × Spot',      yLbl:'Γ×S'},
+    {id:'cmpThetaChart', key:'theta', norm:(v,S)=>v/S, unit:'Θ/S per day',   yLbl:'Θ/S'},
+    {id:'cmpVegaChart',  key:'vega',  norm:(v,S)=>v/S, unit:'ν/S per 1%IV',  yLbl:'ν/S'},
+  ];
+  for(const cfg of normCfgs){
+    const fn=(v,S)=>cfg.norm(v,S); fn.key=cfg.key;
+    makeChart(cfg.id, buildDatasets(fn), cfg.yLbl, 'Moneyness K/S', cfg.unit, fmt4);
+  }
+
+  // ── Per-option view (same as Greeks tab — raw per-share values) ──
+  const rawCfgs=[
+    {id:'cmpStkDeltaChart', key:'delta', norm:(v,S)=>v,  unit:'Δ (per share)',       yLbl:'Δ'},
+    {id:'cmpStkGammaChart', key:'gamma', norm:(v,S)=>v,  unit:'Γ (per share)',        yLbl:'Γ'},
+    {id:'cmpStkThetaChart', key:'theta', norm:(v,S)=>v,  unit:'Θ/day (per share $)', yLbl:'Θ'},
+    {id:'cmpStkVegaChart',  key:'vega',  norm:(v,S)=>v,  unit:'ν per 1%IV ($)',      yLbl:'ν'},
+  ];
+  for(const cfg of rawCfgs){
+    const fn=(v,S)=>cfg.norm(v,S); fn.key=cfg.key;
+    makeChart(cfg.id, buildDatasets(fn), cfg.yLbl, 'Moneyness K/S', cfg.unit, fmt4);
   }
 }
 
