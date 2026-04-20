@@ -961,10 +961,10 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
           <span id="simExpControls" style="display:flex;align-items:center;gap:4px;font-size:9px;color:var(--mut)">
             Step:&nbsp;<input type="number" id="simDteStep" value="7" min="1" max="365" step="1"
               style="width:34px;font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 3px"
-              oninput="renderPricesTable()">d
+              oninput="onSimExpGridChange()">d
             &nbsp;Count:&nbsp;<input type="number" id="simExpCount" value="50" min="1" max="200" step="1"
               style="width:36px;font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 3px"
-              oninput="renderPricesTable()">
+              oninput="onSimExpGridChange()">
           </span>
           <button id="exportBtn" onclick="exportOptionsData()" style="font-size:9px;padding:2px 7px;background:var(--sur2);border:1px solid var(--bdr);border-radius:3px;color:var(--txt);cursor:pointer;white-space:nowrap">⬇ Export CSV</button>
           <span id="pcLiveNote" style="font-size:9px;color:var(--ylw)"></span>
@@ -1496,6 +1496,12 @@ function simStrikeGrid(S){
   const strikes=[];
   for(let k=lo;k<=hi;k+=step) strikes.push(+k.toFixed(2));
   return strikes;
+}
+
+function onSimExpGridChange(){
+  renderPricesTable();
+  updateGreeksExpiries();
+  renderGreeksDashboard();
 }
 
 function renderPricesTable(){
