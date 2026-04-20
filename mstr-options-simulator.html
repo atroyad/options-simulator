@@ -720,11 +720,17 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
     <!-- ── GREEKS CARD ── -->
     <div class="card view-card" id="greeksCard" style="display:none">
       <div class="hd" style="height:auto;padding:4px 8px;gap:6px;flex-wrap:wrap">
-        <h3>Greeks vs Spot</h3>
-        <span style="font-size:9px;color:var(--mut)">Expiry:</span>
-        <select id="greeksExpiry" style="font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 4px" onchange="renderGreeksDashboard()">
-          <option value="">— load data —</option>
-        </select>
+        <h3>Greeks</h3>
+        <div style="display:flex;gap:2px">
+          <button id="gViewStrike" class="lev-btn on" onclick="setGreeksView('strike')" style="font-size:9px;padding:2px 7px">vs Strike</button>
+          <button id="gViewExpiry" class="lev-btn"    onclick="setGreeksView('expiry')" style="font-size:9px;padding:2px 7px">vs Expiry</button>
+        </div>
+        <span id="gStrikeHdr" style="display:contents">
+          <span style="font-size:9px;color:var(--mut)">Expiry:</span>
+          <select id="greeksExpiry" style="font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 4px" onchange="renderGreeksDashboard()">
+            <option value="">— load data —</option>
+          </select>
+        </span>
         <div style="display:flex;gap:2px">
           <button id="gfAll"  class="lev-btn on" onclick="setGreeksFilter('all')"  style="font-size:9px;padding:2px 7px">All</button>
           <button id="gfCall" class="lev-btn"    onclick="setGreeksFilter('call')" style="font-size:9px;padding:2px 7px">Calls</button>
@@ -736,24 +742,49 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
         <!-- Hidden inputs read by renderGreeksDashboard -->
         <input type="hidden" id="gMin" value="100">
         <input type="hidden" id="gMax" value="400">
-        <div class="sc-row" style="font-size:9px;color:var(--mut);padding:1px 0 1px;gap:6px;align-items:center;flex-wrap:wrap">
-          <span style="white-space:nowrap">X range:</span>
-          <span style="white-space:nowrap;font-family:monospace;min-width:28px;text-align:right" id="gMinLabel">$100</span>
-          <input type="range" id="gMinSlider" min="1" max="4999" value="100" step="1"
-            style="flex:1;min-width:40px;accent-color:var(--blu);height:3px"
-            oninput="onGreeksRangeSlider('min',this.value)">
-          <input type="range" id="gMaxSlider" min="2" max="5000" value="400" step="1"
-            style="flex:1;min-width:40px;accent-color:var(--blu);height:3px"
-            oninput="onGreeksRangeSlider('max',this.value)">
-          <span style="white-space:nowrap;font-family:monospace;min-width:36px" id="gMaxLabel">$400</span>
-          <button onclick="resetGreeksRange()" style="font-size:8px;padding:1px 5px;border:1px solid var(--bdr);border-radius:3px;background:var(--sur2);color:var(--mut);cursor:pointer;white-space:nowrap">Reset</button>
-          <span style="white-space:nowrap;width:100%;display:flex;align-items:center;gap:6px;padding-top:1px">
-            <span style="white-space:nowrap">±%:</span>
-            <span style="white-space:nowrap;font-family:monospace;min-width:28px;text-align:right" id="gPctLabel">±50%</span>
-            <input type="range" id="gPctSlider" min="5" max="200" value="50" step="5"
-              style="flex:1;min-width:40px;accent-color:var(--pur);height:3px"
-              oninput="onRangePctSlider('g',+this.value)">
-          </span>
+        <!-- vs-Strike range controls -->
+        <div id="gRangeControls">
+          <div class="sc-row" style="font-size:9px;color:var(--mut);padding:1px 0 1px;gap:6px;align-items:center;flex-wrap:wrap">
+            <span style="white-space:nowrap">X range:</span>
+            <span style="white-space:nowrap;font-family:monospace;min-width:28px;text-align:right" id="gMinLabel">$100</span>
+            <input type="range" id="gMinSlider" min="1" max="4999" value="100" step="1"
+              style="flex:1;min-width:40px;accent-color:var(--blu);height:3px"
+              oninput="onGreeksRangeSlider('min',this.value)">
+            <input type="range" id="gMaxSlider" min="2" max="5000" value="400" step="1"
+              style="flex:1;min-width:40px;accent-color:var(--blu);height:3px"
+              oninput="onGreeksRangeSlider('max',this.value)">
+            <span style="white-space:nowrap;font-family:monospace;min-width:36px" id="gMaxLabel">$400</span>
+            <button onclick="resetGreeksRange()" style="font-size:8px;padding:1px 5px;border:1px solid var(--bdr);border-radius:3px;background:var(--sur2);color:var(--mut);cursor:pointer;white-space:nowrap">Reset</button>
+            <span style="white-space:nowrap;width:100%;display:flex;align-items:center;gap:6px;padding-top:1px">
+              <span style="white-space:nowrap">±%:</span>
+              <span style="white-space:nowrap;font-family:monospace;min-width:28px;text-align:right" id="gPctLabel">±50%</span>
+              <input type="range" id="gPctSlider" min="5" max="200" value="50" step="5"
+                style="flex:1;min-width:40px;accent-color:var(--pur);height:3px"
+                oninput="onRangePctSlider('g',+this.value)">
+            </span>
+          </div>
+        </div>
+        <!-- vs-Expiry controls -->
+        <div id="gExpiryControls" style="display:none;margin-bottom:4px">
+          <div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin-bottom:4px">
+            <span style="font-size:9px;color:var(--mut);white-space:nowrap">DTE max:</span>
+            <input type="range" id="gDteMax" min="10" max="365" step="5" value="180"
+              style="flex:1;min-width:60px;accent-color:var(--blu);height:3px"
+              oninput="document.getElementById('gDteMaxVal').textContent=+this.value+'d';renderGreeksVsExpiry()">
+            <span id="gDteMaxVal" style="font-size:9px;font-family:monospace;color:var(--blu);min-width:28px">180d</span>
+            <span style="font-size:9px;color:var(--mut);margin-left:10px;white-space:nowrap">Entry $</span>
+            <input id="gRollEntry" type="number" placeholder="e.g. 3.85" step="0.01"
+              style="width:64px;font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 4px"
+              oninput="renderRollTable()">
+            <span style="font-size:8px;color:var(--mut)">(roll P&amp;L)</span>
+          </div>
+          <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px">
+            <div id="gRollStrikeList" style="display:flex;flex-wrap:wrap;gap:3px"></div>
+            <input id="gRollStrikeInput" type="number" placeholder="Strike $" step="2.5"
+              style="width:82px;font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 5px"
+              onkeydown="if(event.key==='Enter')addRollStrike()">
+            <button onclick="addRollStrike()" style="font-size:9px;padding:2px 8px;border:1px solid var(--bdr);border-radius:3px;background:var(--sur2);color:var(--mut);cursor:pointer">+ Strike</button>
+          </div>
         </div>
         <div class="greeks-grid">
           <div><canvas id="gDeltaChart"></canvas></div>
@@ -761,6 +792,12 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
           <div><canvas id="gThetaChart"></canvas></div>
           <div><canvas id="gVegaChart"></canvas></div>
         </div>
+        <!-- Option price chart — vs-Expiry mode only -->
+        <div id="gPriceRow" style="display:none;position:relative;height:90px;margin-top:6px">
+          <canvas id="gPriceChart"></canvas>
+        </div>
+        <!-- Roll summary table — live data + vs-Expiry mode only -->
+        <div id="gRollTable" style="display:none;margin-top:8px;overflow-x:auto"></div>
       </div>
     </div><!-- /greeksCard -->
 
@@ -4245,6 +4282,290 @@ function togLine(btn){
 let _smileFitted=false; // true after first auto-fit; prevents re-fitting on auto-refresh
 let _greeksCharts={};
 let _greeksFilter='all'; // 'all' | 'call' | 'put'
+let _greeksVsExp='strike'; // 'strike' | 'expiry'
+let _rollStrikes=[];       // selected strikes for vs-Expiry mode
+let _gPriceChart=null;     // Chart.js instance for option price chart
+
+const _ROLL_COLORS=['#58a6ff','#3fb950','#f78166','#d2a8ff','#ffa657','#79c0ff','#56d364','#ff7b72','#e3b341','#f0883e'];
+
+function setGreeksView(v){
+  _greeksVsExp=v;
+  const isExp=v==='expiry';
+  const bS=document.getElementById('gViewStrike'),bE=document.getElementById('gViewExpiry');
+  if(bS){bS.classList.toggle('on',!isExp);}
+  if(bE){bE.classList.toggle('on',isExp);}
+  const strikeHdr=document.getElementById('gStrikeHdr');
+  const rangeCtrl=document.getElementById('gRangeControls');
+  const expCtrl  =document.getElementById('gExpiryControls');
+  if(strikeHdr) strikeHdr.style.display=isExp?'none':'contents';
+  if(rangeCtrl) rangeCtrl.style.display=isExp?'none':'';
+  if(expCtrl)   expCtrl.style.display  =isExp?'':'none';
+  if(!isExp){
+    if(_gPriceChart){_gPriceChart.destroy();_gPriceChart=null;}
+    const pr=document.getElementById('gPriceRow');  if(pr) pr.style.display='none';
+    const rt=document.getElementById('gRollTable'); if(rt) rt.style.display='none';
+  }
+  renderGreeksDashboard();
+}
+
+function addRollStrike(){
+  const inp=document.getElementById('gRollStrikeInput');
+  if(!inp) return;
+  const K=Math.round(+inp.value*4)/4;
+  if(!K||_rollStrikes.includes(K)) return;
+  _rollStrikes.push(K);
+  inp.value='';
+  renderRollStrikeChips();
+  renderGreeksVsExpiry();
+}
+
+function removeRollStrike(i){
+  _rollStrikes.splice(i,1);
+  renderRollStrikeChips();
+  renderGreeksVsExpiry();
+}
+
+function renderRollStrikeChips(){
+  const el=document.getElementById('gRollStrikeList');
+  if(!el) return;
+  el.innerHTML='';
+  _rollStrikes.forEach((K,i)=>{
+    const col=_ROLL_COLORS[i%_ROLL_COLORS.length];
+    const chip=document.createElement('span');
+    chip.style.cssText=`display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:10px;background:${col}33;border:1px solid ${col};font-size:9px;color:${col}`;
+    chip.innerHTML=`$${K}<span onclick="removeRollStrike(${i})" style="cursor:pointer;margin-left:2px;font-size:11px;line-height:1">✕</span>`;
+    el.appendChild(chip);
+  });
+}
+
+function renderGreeksVsExpiry(){
+  const spot=state.spot;
+  const showCall=_greeksFilter==='all'||_greeksFilter==='call';
+  const showPut =_greeksFilter==='all'||_greeksFilter==='put';
+  const maxDTE=+(document.getElementById('gDteMax')?.value||180);
+  const srcLbl=document.getElementById('greeksSrcLabel');
+
+  // Destroy existing charts
+  ['gDeltaChart','gGammaChart','gThetaChart','gVegaChart'].forEach(id=>{
+    if(_greeksCharts[id]){_greeksCharts[id].destroy();delete _greeksCharts[id];}
+  });
+  if(_gPriceChart){_gPriceChart.destroy();_gPriceChart=null;}
+
+  if(_rollStrikes.length===0){
+    if(srcLbl) srcLbl.textContent='Add strikes above to plot';
+    document.getElementById('gPriceRow').style.display='none';
+    document.getElementById('gRollTable').style.display='none';
+    return;
+  }
+
+  // Smooth BS curve: 60 DTE points
+  const nPts=60;
+  const dteArr=[];
+  for(let i=1;i<=nPts;i++) dteArr.push(+(i*maxDTE/nPts).toFixed(3));
+
+  const allDss={delta:[],gamma:[],theta:[],vega:[],price:[]};
+
+  _rollStrikes.forEach((K,si)=>{
+    const col=_ROLL_COLORS[si%_ROLL_COLORS.length];
+    const typeCfgs=[];
+    if(showCall) typeCfgs.push({type:'call',dash:[],suf:'Call'});
+    if(showPut)  typeCfgs.push({type:'put', dash:[5,3],suf:'Put'});
+    for(const {type,dash,suf} of typeCfgs){
+      const pts={delta:[],gamma:[],theta:[],vega:[],price:[]};
+      for(const dte of dteArr){
+        const T=Math.max(dte/365,1/365);
+        const baseIV=atmIV(T);
+        const iv=state.ivSurface==='smile'?smileIV(K,spot,baseIV):baseIV;
+        const g=bsAll(spot,K,T,state.rate,iv,type);
+        pts.delta.push({x:dte,y:g.delta});
+        pts.gamma.push({x:dte,y:g.gamma});
+        pts.theta.push({x:dte,y:g.theta});
+        pts.vega.push({x:dte,y:g.vega});
+        pts.price.push({x:dte,y:g.price});
+      }
+      const base={label:`$${K} ${suf}`,borderColor:col,backgroundColor:col+'18',
+        borderWidth:1.5,pointRadius:0,pointHoverRadius:4,
+        showLine:true,fill:false,tension:0.3,borderDash:dash};
+      Object.keys(allDss).forEach(k=>allDss[k].push({...base,data:pts[k]}));
+    }
+  });
+
+  // Live data overlay: scatter dots at real chain expiries
+  if(state.liveOptions.length>0){
+    const exps=[...new Set(state.liveOptions.map(o=>o.exp))].sort();
+    _rollStrikes.forEach((K,si)=>{
+      const col=_ROLL_COLORS[si%_ROLL_COLORS.length];
+      const liveCfgs=[];
+      if(showCall) liveCfgs.push({type:'call',pStyle:'circle',alpha:'ee',suf:'Call ●'});
+      if(showPut)  liveCfgs.push({type:'put', pStyle:'triangle',alpha:'aa',suf:'Put ▲'});
+      for(const {type,pStyle,alpha,suf} of liveCfgs){
+        const pts={delta:[],gamma:[],theta:[],vega:[],price:[]};
+        for(const exp of exps){
+          const T=getT(exp); if(T<=0||T*365>maxDTE+5) continue;
+          const opts=state.liveOptions.filter(o=>o.exp===exp&&o.type===type&&o.iv>0);
+          if(!opts.length) continue;
+          const best=opts.reduce((b,o)=>Math.abs(o.K-K)<Math.abs(b.K-K)?o:b,opts[0]);
+          if(Math.abs(best.K-K)>12.5) continue;
+          const g=bsAll(spot,best.K,T,state.rate,best.iv,type);
+          const dte=T*365;
+          const mid=best.mid!=null?best.mid:(best.bid!=null&&best.ask!=null?(best.bid+best.ask)/2:g.price);
+          pts.delta.push({x:dte,y:g.delta});
+          pts.gamma.push({x:dte,y:g.gamma});
+          pts.theta.push({x:dte,y:g.theta});
+          pts.vega.push({x:dte,y:g.vega});
+          pts.price.push({x:dte,y:mid});
+        }
+        if(!pts.delta.length) continue;
+        const base={label:`$${K} ${suf}`,borderColor:col,backgroundColor:col+alpha,
+          pointRadius:5,pointHoverRadius:7,pointStyle:pStyle,
+          showLine:false,borderWidth:1.5};
+        Object.keys(allDss).forEach(k=>{if(pts[k]?.length) allDss[k].push({...base,data:pts[k]});});
+      }
+    });
+  }
+
+  const isLive=state.liveOptions.length>0;
+  if(srcLbl) srcLbl.textContent=isLive?'BS curve + live chain dots · x=DTE':'BS model · x=DTE';
+
+  // Shared axis builder
+  const xAxis=()=>({
+    type:'linear',min:0,max:maxDTE,
+    ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:8,callback:v=>v+'d'},
+    grid:{color:'#21262d'},border:{color:'#30363d'},
+    title:{display:true,text:'DTE (days)',color:'#8b949e',font:{size:7}},
+  });
+  const tooltipCbs=(unit)=>({
+    title:i=>{const dte=(typeof i[0].raw==='object'?i[0].raw.x:i[0].parsed.x).toFixed(1);return`DTE: ${dte}d`;},
+    label:i=>{const v=typeof i.raw==='object'?i.raw.y:i.raw;const a=Math.abs(v);
+      return`${i.dataset.label}: ${v<0?'-':''}${unit==='$'?'$'+a.toFixed(2):a>=1?a.toFixed(3):a.toFixed(4)}`;}
+  });
+
+  const cfgs=[
+    {id:'gDeltaChart',label:'Δ',unit:'Δ',key:'delta'},
+    {id:'gGammaChart',label:'Γ',unit:'Γ',key:'gamma'},
+    {id:'gThetaChart',label:'Θ',unit:'Θ/day ($)',key:'theta'},
+    {id:'gVegaChart', label:'ν',unit:'ν per 1%IV ($)',key:'vega'},
+  ];
+
+  for(const cfg of cfgs){
+    const canvas=document.getElementById(cfg.id);
+    if(!canvas) continue;
+    const dss=allDss[cfg.key];
+    if(!dss.length) continue;
+    _greeksCharts[cfg.id]=new Chart(canvas,{
+      type:'scatter',
+      data:{datasets:dss},
+      options:{responsive:true,maintainAspectRatio:false,animation:false,
+        plugins:{
+          legend:{display:dss.length>1,labels:{color:'#8b949e',font:{size:8},boxWidth:8,padding:5}},
+          tooltip:{backgroundColor:'#161b22',borderColor:'#30363d',borderWidth:1,
+            titleColor:'#c9d1d9',bodyColor:'#8b949e',callbacks:tooltipCbs('')},
+        },
+        scales:{
+          x:xAxis(),
+          y:{title:{display:true,text:cfg.unit,color:'#8b949e',font:{size:7}},
+            ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:5,
+              callback:v=>{const a=Math.abs(v);return(v<0?'-':'')+(a>=1?a.toFixed(3):a.toFixed(4));}},
+            grid:{color:ctx=>ctx.tick.value===0?'rgba(255,255,255,0.25)':'#21262d'},
+            border:{color:'#30363d'}},
+        }
+      }
+    });
+  }
+
+  // Option price chart
+  const priceRow=document.getElementById('gPriceRow');
+  const priceCanvas=document.getElementById('gPriceChart');
+  if(priceRow&&priceCanvas&&allDss.price.length){
+    priceRow.style.display='';
+    _gPriceChart=new Chart(priceCanvas,{
+      type:'scatter',
+      data:{datasets:allDss.price},
+      options:{responsive:true,maintainAspectRatio:false,animation:false,
+        plugins:{
+          legend:{display:allDss.price.length>1,labels:{color:'#8b949e',font:{size:8},boxWidth:8,padding:5}},
+          tooltip:{backgroundColor:'#161b22',borderColor:'#30363d',borderWidth:1,
+            titleColor:'#c9d1d9',bodyColor:'#8b949e',callbacks:tooltipCbs('$')},
+        },
+        scales:{
+          x:xAxis(),
+          y:{title:{display:true,text:'Option price ($)',color:'#8b949e',font:{size:7}},
+            ticks:{color:'#8b949e',font:{size:8},maxTicksLimit:5,callback:v=>'$'+v.toFixed(2)},
+            grid:{color:'#21262d'},border:{color:'#30363d'}},
+        }
+      }
+    });
+  }
+
+  renderRollTable();
+}
+
+function renderRollTable(){
+  const el=document.getElementById('gRollTable');
+  if(!el||_greeksVsExp!=='expiry') return;
+  const hasLive=state.liveOptions.length>0;
+  if(!hasLive||_rollStrikes.length===0){el.style.display='none';return;}
+  const entryPx=+(document.getElementById('gRollEntry')?.value||0)||null;
+  const showCall=_greeksFilter==='all'||_greeksFilter==='call';
+  const showPut =_greeksFilter==='all'||_greeksFilter==='put';
+  const exps=[...new Set(state.liveOptions.filter(o=>getT(o.exp)>0).map(o=>o.exp))].sort();
+  const spot=state.spot;
+  const types=[];
+  if(showCall) types.push('call');
+  if(showPut)  types.push('put');
+
+  let html=`<div style="font-size:8px;color:var(--mut);margin-bottom:3px;font-style:italic">
+    Roll candidates — real chain · Calls solid, Puts dashed${entryPx?` · entry $${entryPx.toFixed(2)}`:''}
+    <span style="color:#8b949e"> · "vs Entry" = mid − entry (positive = extra credit collected)</span></div>
+  <table style="width:100%;border-collapse:collapse;font-size:8px">
+  <thead><tr style="color:var(--mut);border-bottom:1px solid var(--bdr)">
+    <th style="text-align:left;padding:2px 5px">Strike</th>
+    <th style="text-align:left;padding:2px 5px">Type</th>
+    <th style="text-align:left;padding:2px 5px">Expiry</th>
+    <th style="text-align:right;padding:2px 5px">DTE</th>
+    <th style="text-align:right;padding:2px 5px">Bid</th>
+    <th style="text-align:right;padding:2px 5px">Ask</th>
+    <th style="text-align:right;padding:2px 5px">Mid</th>
+    <th style="text-align:right;padding:2px 5px">Δ</th>
+    <th style="text-align:right;padding:2px 5px">Θ/d</th>
+    ${entryPx?'<th style="text-align:right;padding:2px 5px">vs Entry</th>':''}
+  </tr></thead><tbody>`;
+
+  _rollStrikes.forEach((K,si)=>{
+    const col=_ROLL_COLORS[si%_ROLL_COLORS.length];
+    types.forEach(type=>{
+      exps.forEach(exp=>{
+        const T=getT(exp); if(T<=0) return;
+        const opts=state.liveOptions.filter(o=>o.exp===exp&&o.type===type&&o.iv>0);
+        if(!opts.length) return;
+        const best=opts.reduce((b,o)=>Math.abs(o.K-K)<Math.abs(b.K-K)?o:b,opts[0]);
+        if(Math.abs(best.K-K)>12.5) return;
+        const g=bsAll(spot,best.K,T,state.rate,best.iv,type);
+        const bid=best.bid; const ask=best.ask;
+        const mid=best.mid!=null?best.mid:(bid!=null&&ask!=null?(bid+ask)/2:g.price);
+        const dte=Math.round(T*365);
+        const vsE=entryPx!=null?(mid-entryPx):null;
+        const vsCol=vsE===null?'':vsE>=0?'color:#3fb950':'color:#f85149';
+        html+=`<tr style="border-bottom:1px solid #21262d">
+          <td style="padding:2px 5px;color:${col};font-weight:600">$${best.K}</td>
+          <td style="padding:2px 5px;color:${type==='call'?'#58a6ff':'#f85149'}">${type}</td>
+          <td style="padding:2px 5px;color:var(--txt)">${exp}</td>
+          <td style="padding:2px 5px;text-align:right;color:var(--mut)">${dte}</td>
+          <td style="padding:2px 5px;text-align:right;color:var(--mut)">${bid!=null?'$'+bid.toFixed(2):'—'}</td>
+          <td style="padding:2px 5px;text-align:right;color:var(--mut)">${ask!=null?'$'+ask.toFixed(2):'—'}</td>
+          <td style="padding:2px 5px;text-align:right;color:var(--txt);font-weight:600">$${mid.toFixed(2)}</td>
+          <td style="padding:2px 5px;text-align:right;color:var(--mut)">${g.delta.toFixed(3)}</td>
+          <td style="padding:2px 5px;text-align:right;color:var(--mut)">${g.theta.toFixed(3)}</td>
+          ${vsE!=null?`<td style="padding:2px 5px;text-align:right;font-weight:600;${vsCol}">${vsE>=0?'+':''}$${vsE.toFixed(2)}</td>`:''}
+        </tr>`;
+      });
+    });
+  });
+
+  html+='</tbody></table>';
+  el.style.display='';
+  el.innerHTML=html;
+}
 
 function setGreeksFilter(f){
   _greeksFilter=f;
@@ -4285,6 +4606,7 @@ function updateGreeksExpiries(){
 }
 
 function renderGreeksDashboard(){
+  if(_greeksVsExp==='expiry'){ renderGreeksVsExpiry(); return; }
   const spot=state.spot;
   const selExp=document.getElementById('greeksExpiry')?.value||'';
   if(!selExp) return;
