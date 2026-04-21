@@ -337,12 +337,17 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
           onchange="syncSpot(this.value);setSpotBase(+this.value)" style="margin-top:3px"
           title="Current spot — also resets baseline">
 
-        <label class="lbl">Implied Volatility %</label>
+        <label class="lbl">IV % <span style="font-weight:400;color:var(--mut)">(σ<sub>ref</sub> @ 30d)</span></label>
         <div class="row">
           <input type="range" id="sIV" min="20" max="300" step="1" value="80" oninput="syncIV(this.value)">
           <span class="pval" id="dIV">80%</span>
         </div>
         <input type="number" id="iIV" value="80" step="5" min="5" max="500" onchange="syncIV(this.value)" style="margin-top:3px">
+        <div style="font-size:8px;color:var(--mut);margin-top:3px;display:flex;gap:4px;align-items:center">
+          1σ daily move:
+          <span id="dSig1d" style="color:var(--ylw);font-family:monospace;font-weight:600">—</span>
+          <span style="color:var(--mut)">(S·IV/√252)</span>
+        </div>
 
         <div class="pair" style="margin-top:5px">
           <div>
@@ -3842,7 +3847,7 @@ function renderLegs(){
   for(const l of state.legs){
     const T=getT(l.exp);
     const ep=entryPx(l);
-    const cp=bsPrice(state.spot,l.K,T,state.rate,state.iv,l.type);
+    const cp=liveChainMid(l.K,l.exp,l.type)??bsPrice(state.spot,l.K,T,state.rate,state.iv,l.type);
     const sign=l.action==='buy'?1:-1;
     const pnl=sign*(cp-ep)*l.qty*100;
     const gr=T>0?bsAll(state.spot,l.K,T,state.rate,state.iv,l.type):{theta:0,d2:0};
@@ -3988,13 +3993,26 @@ function toggleForm(){
   document.getElementById('addForm').style.display=formOpen?'grid':'none';
   if(formOpen)fAutoPrice();
 }
+// Look up real chain mid for (K, exp, type). Returns null if not available.
+function liveChainMid(K,exp,type){
+  if(!state.liveOptions.length) return null;
+  const opts=state.liveOptions.filter(o=>o.exp===exp&&o.type===type&&o.K===K);
+  if(!opts.length) return null;
+  const o=opts[0];
+  if(o.mid!=null&&o.mid>0) return o.mid;
+  if(o.bid!=null&&o.ask!=null&&(o.bid+o.ask)>0) return (o.bid+o.ask)/2;
+  return null;
+}
 function fAutoPrice(){
-  const T=getT(document.getElementById('fExpiry').value);
+  const exp=document.getElementById('fExpiry').value;
+  const T=getT(exp);
   const K=+document.getElementById('fStrike').value;
   const type=document.getElementById('fType').value;
   if(T>0&&K>0){
-    const p=bsPrice(state.spot,K,T,state.rate,state.iv,type);
-    document.getElementById('fPrem').placeholder=`auto ($${p.toFixed(2)})`;
+    const live=liveChainMid(K,exp,type);
+    const p=live??bsPrice(state.spot,K,T,state.rate,state.iv,type);
+    const src=live?'live mid':'BS';
+    document.getElementById('fPrem').placeholder=`auto ($${p.toFixed(2)} ${src})`;
   }
 }
 function doAddLeg(){
@@ -4007,7 +4025,8 @@ function doAddLeg(){
   const qty=+document.getElementById('fQty').value;
   const pv=document.getElementById('fPrem').value;
   const T=getT(exp);
-  const prem=pv?+pv:bsPrice(state.spot,K,T,state.rate,state.iv,type);
+  const live=liveChainMid(K,exp,type);
+  const prem=pv?+pv:(live??bsPrice(state.spot,K,T,state.rate,state.iv,type));
   state.legs.push({id:state.nid++,type,action,K,exp,qty,prem});
   toggleForm();renderAll();
 }
@@ -4256,6 +4275,7 @@ function syncSpotOffset(pct){
   document.getElementById('dSpot').textContent='$'+spot;
   document.getElementById('iSpot').value=spot;
   initHmRange();
+  updateSig1d();
   renderAll();
 }
 function syncSpot(v){
@@ -4267,13 +4287,21 @@ function syncSpot(v){
   document.getElementById('iSpot').value=_spotBase;
   document.getElementById('iSpotBase').value=_spotBase;
   initHmRange();
+  updateSig1d();
   renderAll();
+}
+function updateSig1d(){
+  const el=document.getElementById('dSig1d');
+  if(!el) return;
+  const s=state.spot*state.iv/Math.sqrt(252);
+  el.textContent='$'+s.toFixed(2);
 }
 function syncIV(v){
   state.iv=+v/100;
   document.getElementById('dIV').textContent=v+'%';
   document.getElementById('sIV').value=v;
   document.getElementById('iIV').value=v;
+  updateSig1d();
   renderAll();
 }
 function togLine(btn){
@@ -5377,6 +5405,7 @@ function renderGreeksComparison(){
 // ═══════════════════════════════════════════════════════
 window.addEventListener('load',()=>{
   document.getElementById('fStrike').value=state.spot;
+  updateSig1d();
   initHmRange();
   initResizers();
   _applyViewLayout();
