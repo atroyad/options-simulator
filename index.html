@@ -783,7 +783,11 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
               <button onclick="resetGreeksSimSpot()" style="font-size:8px;padding:1px 5px;border:1px solid var(--bdr);border-radius:3px;background:var(--sur2);color:var(--mut);cursor:pointer">↺</button>
             </div>
           </div>
+          <!-- ATM price summary line — populated by renderGreeksDashboard -->
+          <div id="gScenPriceInfo" style="display:none;font-size:8px;color:var(--mut);padding:1px 0 3px;line-height:1.6;font-family:monospace"></div>
         </div>
+        <!-- Scenario comparison table — vs-Strike mode, populated when scenario spot active -->
+        <div id="gScenTable" style="display:none;margin-top:8px;overflow-x:auto"></div>
         <!-- vs-Expiry controls -->
         <div id="gExpiryControls" style="display:none;margin-bottom:4px">
           <div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin-bottom:4px">
@@ -4381,6 +4385,8 @@ function toggleGreeksSimSpot(){
     _syncSimSpotSlider(_gSimSpot);
   } else {
     _gSimSpot=null;
+    const pi=document.getElementById('gScenPriceInfo'); if(pi) pi.style.display='none';
+    const st=document.getElementById('gScenTable');     if(st) st.style.display='none';
   }
   renderGreeksDashboard();
 }
@@ -4436,6 +4442,10 @@ function setGreeksView(v){
     const pr=document.getElementById('gPriceRow');   if(pr) pr.style.display='none';
     const rr=document.getElementById('gRatioRow');   if(rr) rr.style.display='none';
     const rt=document.getElementById('gRollTable');  if(rt) rt.style.display='none';
+  } else {
+    // Switching to vs-Expiry: hide vs-Strike scenario elements
+    const pi=document.getElementById('gScenPriceInfo'); if(pi) pi.style.display='none';
+    const st=document.getElementById('gScenTable');     if(st) st.style.display='none';
   }
   renderGreeksDashboard();
 }
@@ -4981,6 +4991,125 @@ function renderGreeksDashboard(){
         }
       });
     }
+    // ── Scenario price info + comparison table ──
+    const priceInfoEl=document.getElementById('gScenPriceInfo');
+    const scTableEl=document.getElementById('gScenTable');
+
+    if(!showScen){
+      if(priceInfoEl) priceInfoEl.style.display='none';
+      if(scTableEl)   scTableEl.style.display='none';
+    } else {
+      // ATM strike (closest to current spot)
+      const atmK=allStrikes.length?allStrikes.reduce((b,K)=>Math.abs(K-spot)<Math.abs(b-spot)?K:b,allStrikes[0]):null;
+
+      // Price info line (ATM call + put)
+      if(priceInfoEl&&atmK!=null){
+        const buildPriceInfo=(type,color)=>{
+          const o=callOpts.concat(putOpts).find(x=>x.K===atmK&&x.type===type);
+          if(!o) return '';
+          const iv0=getIVat(o,spot), ivS=getIVat(o,scenSpot);
+          const p0=bsPrice(spot, atmK,T,state.rate,iv0,type);
+          const pS=bsPrice(scenSpot,atmK,T,state.rate,ivS,type);
+          const dP=pS-p0, pct=p0>0.001?dP/p0*100:0;
+          const sign=dP>=0?'+':'';
+          const col=dP>=0?'#3fb950':'#f85149';
+          return `<span style="margin-right:12px">ATM ${type} ($${atmK}): `
+            +`<span style="color:var(--txt)">$${p0.toFixed(2)}</span> → `
+            +`<span style="color:${col};font-weight:600">$${pS.toFixed(2)} `
+            +`(${sign}$${dP.toFixed(2)}, ${sign}${pct.toFixed(1)}%)</span></span>`;
+        };
+        const infoHTML=buildPriceInfo('call')+'&nbsp;'+buildPriceInfo('put');
+        priceInfoEl.innerHTML=`<span style="color:var(--mut)">ATM option prices:</span> `+infoHTML;
+        priceInfoEl.style.display='';
+      }
+
+      // Comparison table
+      if(scTableEl){
+        const fmt4=v=>(v>=0?'':'-')+Math.abs(v).toFixed(4);
+        const fmt2=v=>(v>=0?'':'-')+'$'+Math.abs(v).toFixed(2);
+        const fmtIV=v=>(v*100).toFixed(1)+'%';
+        const diff=(a,b,inv=false)=>{
+          const d=b-a; if(Math.abs(d)<1e-6) return '';
+          const up=inv?d<0:d>0;
+          const col=up?'#3fb950':'#f85149';
+          const sign=d>=0?'+':'';
+          return `<span style="color:${col}">${sign}${d.toFixed(4)}</span>`;
+        };
+        const diffP=(a,b)=>{
+          const d=b-a; if(Math.abs(d)<0.001) return '';
+          const col=d>0?'#3fb950':'#f85149';
+          const sign=d>=0?'+':'';
+          return `<span style="color:${col}">${sign}$${d.toFixed(2)}</span>`;
+        };
+        const diffIV=(a,b)=>{
+          const d=(b-a)*100; if(Math.abs(d)<0.05) return '';
+          const col=d>0?'#3fb950':'#f85149';
+          const sign=d>=0?'+':'';
+          return `<span style="color:${col}">(${sign}${d.toFixed(1)}pp)</span>`;
+        };
+
+        const thStyle='padding:2px 5px;text-align:right;border-bottom:1px solid #30363d;white-space:nowrap';
+        const thL='padding:2px 5px;text-align:left;border-bottom:1px solid #30363d;white-space:nowrap';
+        const tdStyle='padding:2px 5px;text-align:right;white-space:nowrap;border-bottom:1px solid #21262d';
+        const tdL='padding:2px 5px;text-align:left;white-space:nowrap;border-bottom:1px solid #21262d';
+
+        const scenSpotFmt='$'+scenSpot.toFixed(0);
+        const spotFmt='$'+spot.toFixed(0);
+
+        let html=`<div style="font-size:8px;color:var(--mut);margin-bottom:3px">Greeks comparison: current spot ${spotFmt} vs scenario ${scenSpotFmt}</div>
+<table style="border-collapse:collapse;font-size:8px;color:var(--txt);min-width:700px;width:100%">
+<thead>
+<tr style="color:var(--mut);background:var(--sur2)">
+  <th style="${thL}">Strike</th>
+  <th style="${thL}">Type</th>
+  <th style="${thStyle}">IV (${spotFmt})</th>
+  <th style="${thStyle}">IV (${scenSpotFmt})</th>
+  <th style="${thStyle}">Price (${spotFmt})</th>
+  <th style="${thStyle}">Price (${scenSpotFmt})</th>
+  <th style="${thStyle}">Δ (${spotFmt})</th>
+  <th style="${thStyle}">Δ (${scenSpotFmt})</th>
+  <th style="${thStyle}">Γ (${spotFmt})</th>
+  <th style="${thStyle}">Γ (${scenSpotFmt})</th>
+  <th style="${thStyle}">Θ/d (${spotFmt})</th>
+  <th style="${thStyle}">Θ/d (${scenSpotFmt})</th>
+  <th style="${thStyle}">ν (${spotFmt})</th>
+  <th style="${thStyle}">ν (${scenSpotFmt})</th>
+</tr>
+</thead><tbody>`;
+
+        const allOptsForTable=[...callOpts,...putOpts].sort((a,b)=>a.K-b.K||(a.type==='call'?-1:1));
+        for(const o of allOptsForTable){
+          const iv0=getIVat(o,spot), ivS=getIVat(o,scenSpot);
+          const g0=bsAll(spot,   o.K,T,state.rate,iv0,o.type);
+          const gS=bsAll(scenSpot,o.K,T,state.rate,ivS,o.type);
+          const p0=bsPrice(spot,   o.K,T,state.rate,iv0,o.type);
+          const pS=bsPrice(scenSpot,o.K,T,state.rate,ivS,o.type);
+          const isAtm=o.K===atmK;
+          const rowBg=isAtm?'background:rgba(255,193,7,0.06)':'';
+          const typeCol=o.type==='call'?'#58a6ff':'#f85149';
+          html+=`<tr style="${rowBg}">
+  <td style="${tdL};font-family:monospace${isAtm?';font-weight:600;color:var(--ylw)':''}">$${o.K}</td>
+  <td style="${tdL};color:${typeCol}">${o.type}</td>
+  <td style="${tdStyle}">${fmtIV(iv0)}</td>
+  <td style="${tdStyle}">${fmtIV(ivS)} ${diffIV(iv0,ivS)}</td>
+  <td style="${tdStyle}">$${p0.toFixed(2)}</td>
+  <td style="${tdStyle}">$${pS.toFixed(2)} ${diffP(p0,pS)}</td>
+  <td style="${tdStyle}">${fmt4(g0.delta)}</td>
+  <td style="${tdStyle}">${fmt4(gS.delta)} ${diff(g0.delta,gS.delta,o.type==='put')}</td>
+  <td style="${tdStyle}">${fmt4(g0.gamma)}</td>
+  <td style="${tdStyle}">${fmt4(gS.gamma)} ${diff(g0.gamma,gS.gamma)}</td>
+  <td style="${tdStyle}">${fmt4(g0.theta)}</td>
+  <td style="${tdStyle}">${fmt4(gS.theta)} ${diff(g0.theta,gS.theta,true)}</td>
+  <td style="${tdStyle}">${fmt4(g0.vega)}</td>
+  <td style="${tdStyle}">${fmt4(gS.vega)} ${diff(g0.vega,gS.vega)}</td>
+</tr>`;
+        }
+        html+='</tbody></table>';
+        scTableEl.innerHTML=html;
+        scTableEl.style.display='';
+      }
+    }
+
     return; // done with live mode
   }
 
