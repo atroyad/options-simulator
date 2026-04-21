@@ -3318,7 +3318,7 @@ function buildDatasets(sp){
   // The band is drawn BEFORE the main lines so lines sit on top of the fill.
   const rho=state.spotVolRho||0;
   const hasTimedLines=cfgs.some(c=>c.k!=='expiry'&&state.lines[c.k]);
-  if(rho>0.01&&hasTimedLines&&state.legs.length>0){
+  if(Math.abs(rho)>0.01&&hasTimedLines&&state.legs.length>0){
     const timedCfgs=cfgs.filter(c=>c.k!=='expiry'&&state.lines[c.k]);
     // Helper to parse hex color into rgba with alpha
     const hexRgba=(hex,a)=>{
@@ -3402,7 +3402,7 @@ function buildDatasets(sp){
       return p;
     });
     // Vol-corr band for this custom line
-    if(rho>0.01){
+    if(Math.abs(rho)>0.01){
       const corrData=sp.map(S=>{
         let p=0;
         for(const l of state.legs){
