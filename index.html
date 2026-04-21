@@ -2894,16 +2894,11 @@ function scenarioIV(l,S){
     }
     return smileIV(l.K,S,baseIV);
   }
-  // Flat mode: use real chain IV as the base when live data is available.
-  // This ensures P&L and Greeks in the strategy builder match real market prices.
-  // The spot-vol adjustment (rho) is still applied when S ≠ state.spot.
+  // Flat mode: use real chain IV per strike as the base when live data is available.
+  // NO rho adjustment here — this is the flat-IV baseline (vol stays fixed as spot moves).
+  // The rho effect is applied separately in volAdjIV(), which is used only for the band.
   const chainIV=liveChainIV(l.K,l.exp,l.type);
-  const iv0=chainIV??baseIV;
-  if(S!==state.spot&&state.spot>0&&iv0>0){
-    // sticky-spot-vol: σ_new = σ_0 × (S_0/S_new)^ρ
-    return iv0*Math.pow(state.spot/S,state.spotVolRho??0);
-  }
-  return iv0;
+  return chainIV??baseIV;
 }
 
 function renderSmileChart(){
