@@ -3281,26 +3281,41 @@ function buildDatasets(sp){
     {k:'t60',  label:'+60d',     color:'#f0883e',dash:[4,3],w:1.5},
     {k:'t90',  label:'+90d',     color:'#bc8cff',dash:[4,3],w:1.5},
   ];
+
+  // Per-leg: chain IV (real market IV) and market anchor offset.
+  // mktOffset = liveChainMid − bsPrice(chainIV) at current spot/T.
+  // Adding mktOffset to every BS price ensures the chart value at current spot
+  // exactly matches the leg table (which uses liveChainMid directly).
+  const legMeta=state.legs.map(l=>{
+    const T=getT(l.exp);
+    const chainIV=liveChainIV(l.K,l.exp,l.type)??scenarioIV(l,state.spot);
+    const bsSpot=T>0?bsPrice(state.spot,l.K,T,state.rate,chainIV,l.type)
+                     :Math.max(0,l.type==='call'?state.spot-l.K:l.K-state.spot);
+    const liveMid=liveChainMid(l.K,l.exp,l.type);
+    return{chainIV, mktOffset:liveMid!==null?liveMid-bsSpot:0};
+  });
+
   const ds=cfgs.filter(c=>state.lines[c.k]).map(c=>({
     label:c.label,
     data:sp.map(S=>{
       let p=0;
-      for(const l of state.legs){
+      for(let i=0;i<state.legs.length;i++){
+        const l=state.legs[i];
+        const {chainIV,mktOffset}=legMeta[i];
         const sign=l.action==='buy'?1:-1;
         const Tnow=getT(l.exp);
-        const ep=entryPx(l); // always = leg.prem (fixed at creation), no state.spot dep.
+        const ep=entryPx(l);
         if(c.k==='expiry'){
-          // At expiry: intrinsic payoff minus fixed entry price. IV-independent.
+          // At expiry: intrinsic payoff. IV-independent, no market offset needed.
           const intr=Math.max(0,l.type==='call'?S-l.K:l.K-S);
           p+=sign*(intr-ep)*l.qty*100;
         } else {
-          // Time-based: current BS value at scenario spot S minus fixed entry price.
-          // refPx = ep (fixed) ensures the chart is immune to state.spot sliding past strike.
-          // scenarioIV = current state.iv (± smile at S) so IV slider moves the chart.
+          // Baseline: flat IV (no rho), anchored to live market mid at current spot.
+          // scenarioIV returns per-strike chain IV (flat, no rho) for the baseline curve.
           const ivFut=scenarioIV(l,S);
           const elap=c.k==='t0'?0:parseInt(c.k.slice(1));
           const Tfut=Math.max(0,Tnow-elap/365);
-          const cp=bsPrice(S,l.K,Tfut,state.rate,ivFut,l.type);
+          const cp=bsPrice(S,l.K,Tfut,state.rate,ivFut,l.type)+mktOffset;
           p+=sign*(cp-ep)*l.qty*100;
         }
       }
@@ -3328,15 +3343,20 @@ function buildDatasets(sp){
     for(const c of timedCfgs){
       const corrData=sp.map(S=>{
         let p=0;
-        for(const l of state.legs){
+        for(let i=0;i<state.legs.length;i++){
+          const l=state.legs[i];
+          const {chainIV,mktOffset}=legMeta[i];
           const sign=l.action==='buy'?1:-1;
           const Tnow=getT(l.exp);
           const ep=entryPx(l);
-          const adjBase=volAdjIV(S,state.iv);
-          const adjIV=state.ivSurface==='smile'?smileIV(l.K,S,adjBase):adjBase;
+          // Vol-corr band: apply rho adjustment to per-leg chain IV (not state.iv).
+          // At S=state.spot: rho factor=1 → adjIV=chainIV → corrData=baseData (band=0). ✓
+          const adjIV=state.ivSurface==='smile'
+            ?smileIV(l.K,S,volAdjIV(S,state.iv))
+            :chainIV*Math.pow(state.spot/S,rho);
           const elap=c.k==='t0'?0:parseInt(c.k.slice(1));
           const Tfut=Math.max(0,Tnow-elap/365);
-          const cp=bsPrice(S,l.K,Tfut,state.rate,adjIV,l.type);
+          const cp=bsPrice(S,l.K,Tfut,state.rate,adjIV,l.type)+mktOffset;
           p+=sign*(cp-ep)*l.qty*100;
         }
         return p;
@@ -3389,13 +3409,15 @@ function buildDatasets(sp){
     const col=CUSTOM_COLORS[i%CUSTOM_COLORS.length];
     const baseData=sp.map(S=>{
       let p=0;
-      for(const l of state.legs){
+      for(let j=0;j<state.legs.length;j++){
+        const l=state.legs[j];
+        const {mktOffset}=legMeta[j];
         const sign=l.action==='buy'?1:-1;
         const ep=entryPx(l);
         const ivFut=scenarioIV(l,S);
         const Tnow=getT(l.exp);
         const Tfut=Math.max(0,Tnow-days/365);
-        const cp=bsPrice(S,l.K,Tfut,state.rate,ivFut,l.type);
+        const cp=bsPrice(S,l.K,Tfut,state.rate,ivFut,l.type)+mktOffset;
         p+=sign*(cp-ep)*l.qty*100;
       }
       return p;
@@ -3404,14 +3426,17 @@ function buildDatasets(sp){
     if(Math.abs(rho)>0.01){
       const corrData=sp.map(S=>{
         let p=0;
-        for(const l of state.legs){
+        for(let j=0;j<state.legs.length;j++){
+          const l=state.legs[j];
+          const {chainIV,mktOffset}=legMeta[j];
           const sign=l.action==='buy'?1:-1;
           const ep=entryPx(l);
-          const adjBase=volAdjIV(S,state.iv);
-          const adjIV=state.ivSurface==='smile'?smileIV(l.K,S,adjBase):adjBase;
+          const adjIV=state.ivSurface==='smile'
+            ?smileIV(l.K,S,volAdjIV(S,state.iv))
+            :chainIV*Math.pow(state.spot/S,rho);
           const Tnow=getT(l.exp);
           const Tfut=Math.max(0,Tnow-days/365);
-          const cp=bsPrice(S,l.K,Tfut,state.rate,adjIV,l.type);
+          const cp=bsPrice(S,l.K,Tfut,state.rate,adjIV,l.type)+mktOffset;
           p+=sign*(cp-ep)*l.qty*100;
         }
         return p;
@@ -3604,15 +3629,24 @@ function renderHeatmap(){
   const lo=Math.max(1,_hmLo);
   const hi=Math.max(lo+1,_hmHi);
   const maxDays=Math.max(30,...state.legs.map(l=>getT(l.exp)*365));
-  const hasVolCorr=state.hmVolCorr&&(state.spotVolRho||0)>0.01;
+  const hasVolCorr=state.hmVolCorr&&Math.abs(state.spotVolRho||0)>0.01;
 
   // ── Pre-hoist per-leg constants (avoids recomputing inside the hot loop) ──
-  const legK=state.legs.map(l=>({
-    sign:l.action==='buy'?1:-1,
-    ep:entryPx(l),
-    Tnow_days:getT(l.exp)*365,
-    K:l.K,type:l.type,qty:l.qty,
-  }));
+  const legK=state.legs.map(l=>{
+    const T=getT(l.exp);
+    const chainIV=liveChainIV(l.K,l.exp,l.type)??scenarioIV(l,state.spot);
+    const bsSpot=T>0?bsPrice(state.spot,l.K,T,state.rate,chainIV,l.type)
+                    :Math.max(0,l.type==='call'?state.spot-l.K:l.K-state.spot);
+    const liveMid=liveChainMid(l.K,l.exp,l.type);
+    const mktOffset=liveMid!==null?liveMid-bsSpot:0;
+    return{
+      sign:l.action==='buy'?1:-1,
+      ep:entryPx(l),
+      Tnow_days:T*365,
+      K:l.K,type:l.type,qty:l.qty,
+      chainIV,mktOffset,
+    };
+  });
 
   // ── Single-pass grid computation (base + corr in one loop) ──
   const CELLS=COLS*ROWS;
@@ -3624,24 +3658,25 @@ function renderHeatmap(){
     const days=maxDays*(1-r/(ROWS-1));
     for(let c=0;c<COLS;c++){
       const spot=lo+(hi-lo)*c/(COLS-1);
-      // baseArr always = constant-IV P&L (drives heatmap colors)
+      // baseArr = flat-IV P&L anchored to live market mid at current spot
       let pnl=0;
       for(const l of legK){
         const rem=Math.max(0,l.Tnow_days-(maxDays-days))/365;
-        const iv=state.ivSurface==='smile'?smileIV(l.K,spot,state.iv):state.iv;
-        pnl+=l.sign*(bsPrice(spot,l.K,rem,state.rate,iv,l.type)-l.ep)*l.qty*100;
+        const iv=state.ivSurface==='smile'?smileIV(l.K,spot,l.chainIV):l.chainIV;
+        pnl+=l.sign*(bsPrice(spot,l.K,rem,state.rate,iv,l.type)+l.mktOffset-l.ep)*l.qty*100;
       }
       const idx=r*COLS+c;
       baseArr[idx]=pnl;
       if(pnl<minP)minP=pnl;if(pnl>maxP)maxP=pnl;
-      // corrArr = vol-adjusted P&L (overlay shows diff vs constant-IV)
+      // corrArr = vol-adjusted P&L (rho applied to per-leg chain IV)
       if(corrArr){
         let cpnl=0;
         for(const l of legK){
           const rem=Math.max(0,l.Tnow_days-(maxDays-days))/365;
-          const ab=volAdjIV(spot,state.iv);
-          const iv=state.ivSurface==='smile'?smileIV(l.K,spot,ab):ab;
-          cpnl+=l.sign*(bsPrice(spot,l.K,rem,state.rate,iv,l.type)-l.ep)*l.qty*100;
+          const adjIV=state.ivSurface==='smile'
+            ?smileIV(l.K,spot,volAdjIV(spot,state.iv))
+            :l.chainIV*Math.pow(state.spot/spot,rho);
+          cpnl+=l.sign*(bsPrice(spot,l.K,rem,state.rate,adjIV,l.type)+l.mktOffset-l.ep)*l.qty*100;
         }
         corrArr[idx]=cpnl;
       }
