@@ -281,7 +281,7 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
     </div>
     <!-- Ticker input -->
     <div id="tickerRow" style="display:none;align-items:center;gap:4px">
-      <input id="tickerInput" type="text" value="MSTR" placeholder="Ticker"
+      <input id="tickerInput" type="text" value="" placeholder="Ticker"
         style="font-size:11px;padding:3px 6px;width:72px;background:var(--sur2);
           border:1px solid var(--bdr);color:var(--txt);border-radius:3px;text-transform:uppercase;font-weight:700"
         oninput="setTicker(this.value)">
@@ -313,7 +313,7 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
       <div class="bd">
         <label class="lbl">Ticker Symbol</label>
         <div class="row" style="gap:5px;margin-bottom:6px">
-          <input id="sidebarTicker" type="text" value="MSTR" placeholder="e.g. AAPL"
+          <input id="sidebarTicker" type="text" value="" placeholder="e.g. AAPL"
             style="text-transform:uppercase;font-weight:700;letter-spacing:1px"
             oninput="setTicker(this.value)"
             title="Enter any US stock ticker — used in Live mode only">
@@ -360,7 +360,7 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
         <label class="lbl" style="margin-top:8px">IV Term Structure</label>
         <div style="font-size:8px;color:var(--mut);margin-bottom:4px;line-height:1.4">
           Power-law: σ(T) = σ_ref × (30d/T)<sup>ζ</sup>. Affects all expiries in sim mode.<br>
-          ζ &gt; 0 → inverted (short IV higher, typical MSTR). ζ = 0 → flat.
+          ζ &gt; 0 → inverted (short IV higher, typical high-vol stock). ζ = 0 → flat.
         </div>
         <div class="row" style="gap:4px;margin-bottom:6px;align-items:center">
           <span style="color:var(--mut);font-size:9px;min-width:22px">ζ</span>
@@ -421,7 +421,7 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
           <span id="spotVolRhoVal" style="font-family:monospace;color:var(--ylw);min-width:34px;text-align:right">0.75</span>
         </div>
         <div style="font-size:8px;color:var(--mut);line-height:1.4;margin-bottom:5px">
-          IV(S') = IV₀ × (S/S')^ρ &nbsp;·&nbsp; ρ=0: no change &nbsp;·&nbsp; ρ=0.75: typical equity (vol crush on rally) &nbsp;·&nbsp; ρ&lt;0: momentum regime (vol spikes on rally, e.g. MSTR 140→170 move).
+          IV(S') = IV₀ × (S/S')^ρ &nbsp;·&nbsp; ρ=0: no change &nbsp;·&nbsp; ρ=0.75: typical equity (vol crush on rally) &nbsp;·&nbsp; ρ&lt;0: momentum regime (vol spikes on rally).
         </div>
 
         <!-- Heatmap vol-correlation toggle -->
@@ -1275,7 +1275,7 @@ function bsAll(S,K,T,r,sig,type){
 // STATE
 // ═══════════════════════════════════════════════════════
 const state={
-  ticker:'MSTR',
+  ticker:'',
   spot:200, iv:0.80, rate:0.045,
   simDate:new Date('2026-04-09T12:00:00'),
   legs:[], shares:700, cash:16000, leverage:1.0, nid:1,
@@ -2124,7 +2124,7 @@ function renderCustomDayPills(){
 // ═══════════════════════════════════════════════════════
 function setTicker(raw){
   const t=(raw||'').toUpperCase().replace(/[^A-Z0-9.]/g,'').slice(0,8);
-  state.ticker=t||'MSTR';
+  state.ticker=t||'Ticker';
   // sync both inputs
   const hi=document.getElementById('tickerInput');
   const si=document.getElementById('sidebarTicker');
@@ -2534,7 +2534,7 @@ function exportOptionsData(){
     };
   }
   const payload={
-    ticker:state.ticker||'MSTR',
+    ticker:state.ticker||'Ticker',
     asOf:new Date().toISOString().slice(0,16).replace('T',' ')+' UTC',
     source:state.liveSource,
     spot:+state.spot.toFixed(2),
@@ -2621,7 +2621,7 @@ async function fetchSaxoData(btn,status){
     return fetch(BASE+path,{headers:H});
   };
 
-  const ticker=state.ticker||'MSTR';
+  const ticker=state.ticker||'Ticker';
 
   try{
     // ── Step 1: find stock instrument Uic ──
