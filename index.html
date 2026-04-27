@@ -1087,13 +1087,17 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
             <option value="all">All expiries</option>
           </select>
           <!-- Sim-mode expiry grid controls (hidden in live mode) -->
-          <span id="simExpControls" style="display:flex;align-items:center;gap:4px;font-size:9px;color:var(--mut)">
+          <span id="simExpControls" style="display:flex;align-items:center;gap:6px;font-size:9px;color:var(--mut);flex-wrap:wrap">
             Step:&nbsp;<input type="number" id="simDteStep" value="7" min="1" max="365" step="1"
               style="width:34px;font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 3px"
               oninput="onSimExpGridChange()">d
             &nbsp;Count:&nbsp;<input type="number" id="simExpCount" value="50" min="1" max="200" step="1"
               style="width:36px;font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 3px"
               oninput="onSimExpGridChange()">
+            &nbsp;Moneyness&nbsp;±<span id="simMoneynessVal" style="font-family:monospace;color:var(--ylw);min-width:28px">30%</span>:&nbsp;
+            <input type="range" id="simMoneynessSlider" min="1" max="100" step="1" value="30"
+              style="width:70px;accent-color:var(--ylw);height:3px"
+              oninput="document.getElementById('simMoneynessVal').textContent=this.value+'%';renderPricesTable()">
           </span>
           <button id="exportBtn" onclick="exportOptionsData()" style="font-size:9px;padding:2px 7px;background:var(--sur2);border:1px solid var(--bdr);border-radius:3px;color:var(--txt);cursor:pointer;white-space:nowrap">⬇ Export CSV</button>
           <span id="pcLiveNote" style="font-size:9px;color:var(--ylw)"></span>
@@ -1656,7 +1660,9 @@ function renderPricesTable(){
     if(note) note.textContent='Simulated · BS model';
 
     const S=state.spot;
-    const strikes=simStrikeGrid(S);
+    const monPct=+(document.getElementById('simMoneynessSlider')?.value||30)/100;
+    const kLo=S*(1-monPct), kHi=S*(1+monPct);
+    const strikes=simStrikeGrid(S).filter(K=>K>=kLo&&K<=kHi);
     const T=Math.max(1/365,getT(selExp));
     const rows=[];
     for(const K of strikes){
@@ -1664,7 +1670,6 @@ function renderPricesTable(){
         if(_priceFilter!=='all'&&_priceFilter!==type) continue;
         const iv=state.ivSurface==='smile'?smileIV(K,S,atmIV(T)):atmIV(T);
         const bs=bsAll(S,K,T,state.rate,iv,type);
-        if(bs.price<0.005) continue; // skip near-zero value options
         rows.push({K,type,exp:selExp,iv,price:bs.price,delta:bs.delta,gamma:bs.gamma,theta:bs.theta,vega:bs.vega,sim:true});
       }
     }
