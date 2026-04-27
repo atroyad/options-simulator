@@ -1098,6 +1098,10 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
             <input type="range" id="simMoneynessSlider" min="1" max="100" step="1" value="30"
               style="width:70px;accent-color:var(--ylw);height:3px"
               oninput="document.getElementById('simMoneynessVal').textContent=this.value+'%';renderPricesTable()">
+            &nbsp;Strike step&nbsp;<span id="simStrikeStepVal" style="font-family:monospace;color:var(--ylw);min-width:22px">$1</span>:&nbsp;
+            <input type="range" id="simStrikeStepSlider" min="0" max="9" step="1" value="1"
+              style="width:60px;accent-color:var(--ylw);height:3px"
+              oninput="onSimStrikeStepSlider(this.value)">
           </span>
           <button id="exportBtn" onclick="exportOptionsData()" style="font-size:9px;padding:2px 7px;background:var(--sur2);border:1px solid var(--bdr);border-radius:3px;color:var(--txt);cursor:pointer;white-space:nowrap">⬇ Export CSV</button>
           <span id="pcLiveNote" style="font-size:9px;color:var(--ylw)"></span>
@@ -1638,6 +1642,17 @@ function onSimExpGridChange(){
   renderGreeksDashboard();
 }
 
+const _SIM_STRIKE_STEPS=[0.5,1,2,2.5,5,10,25,50,100,250];
+function onSimStrikeStepSlider(idx){
+  const step=_SIM_STRIKE_STEPS[+idx]??1;
+  document.getElementById('simStrikeStepVal').textContent='$'+step;
+  renderPricesTable();
+}
+function getSimStrikeStep(){
+  const idx=+(document.getElementById('simStrikeStepSlider')?.value??2);
+  return _SIM_STRIKE_STEPS[idx]??1;
+}
+
 function renderPricesTable(){
   const tbody=document.getElementById('pricesBody');
   const expirySelect=document.getElementById('pcExpiry');
@@ -1662,7 +1677,11 @@ function renderPricesTable(){
     const S=state.spot;
     const monPct=+(document.getElementById('simMoneynessSlider')?.value||30)/100;
     const kLo=S*(1-monPct), kHi=S*(1+monPct);
-    const strikes=simStrikeGrid(S).filter(K=>K>=kLo&&K<=kHi);
+    const step=getSimStrikeStep();
+    const lo=Math.max(step,Math.round(kLo/step)*step);
+    const hi=Math.round(kHi/step)*step;
+    const strikes=[];
+    for(let k=lo;k<=hi+step*0.01;k=+(k+step).toFixed(6)) strikes.push(+k.toFixed(4));
     const T=Math.max(1/365,getT(selExp));
     const rows=[];
     for(const K of strikes){
