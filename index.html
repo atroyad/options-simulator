@@ -1593,7 +1593,7 @@ function setPriceFilter(f){
 function moneynessCell(K,S,type){
   const pct=type==='call'?(S-K)/S*100:(K-S)/S*100; // positive = ITM
   const abs=Math.abs(pct).toFixed(1);
-  if(Math.abs(pct)<2) return{label:'ATM',color:'var(--blu)'};
+  if(Math.abs(pct)<1) return{label:'ATM',color:'var(--blu)'};
   if(pct>0) return{label:`ITM −${abs}%`,color:'var(--red)'};
   return{label:`OTM +${abs}%`,color:'var(--grn)'};
 }
