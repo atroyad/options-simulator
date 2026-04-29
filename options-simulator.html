@@ -264,22 +264,12 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
     <div id="liveSrcRow" style="display:none;align-items:center;gap:4px;flex-wrap:wrap">
       <button class="tgl on" id="srcYahoo" onclick="setLiveSource('yahoo')" style="font-size:10px;padding:3px 8px">Yahoo (delayed)</button>
       <button class="tgl"    id="srcSaxo"  onclick="setLiveSource('saxo')"  style="font-size:10px;padding:3px 8px">Saxo Live</button>
-      <button class="tgl"    id="srcIbkr"  onclick="setLiveSource('ibkr')"  style="font-size:10px;padding:3px 8px">IBKR Live</button>
       <!-- Saxo login -->
       <div id="saxoControls" style="display:none;align-items:center;gap:4px;flex-wrap:wrap">
         <button class="btn" style="font-size:10px;padding:3px 8px" onclick="saxoOAuthLogin()">🔐 Login</button>
         <span id="saxoAuthStatusLive" style="font-size:9px;color:var(--mut)"></span>
       </div>
-      <!-- IBKR Client Portal Gateway -->
-      <div id="ibkrControls" style="display:none;align-items:center;gap:4px;flex-wrap:wrap">
-        <input id="ibkrGatewayInput" type="text" value="https://localhost:5000"
-          placeholder="https://localhost:5000"
-          title="URL of your IBKR Client Portal Gateway. Start gateway with: ./bin/run.sh root/conf.yaml, then open this URL in the browser and log in."
-          style="font-size:10px;padding:2px 5px;width:170px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px"
-          oninput="state.ibkrGatewayUrl=this.value.trim()">
-        <button class="btn" id="ibkrConnectBtn" style="font-size:10px;padding:3px 8px" onclick="ibkrConnect()">Connect</button>
-        <span id="ibkrStatus" style="font-size:9px;color:var(--mut)">Not connected</span>
-      </div>
+      <!-- IBKR controls placeholder — re-enabled once vendor credentials are issued -->
       <!-- OPRA note -->
       <span id="opraMsg" style="display:none;font-size:9px;color:var(--mut)">
         ⚠ Live OPRA subscription required for real-time prices.
@@ -2188,7 +2178,7 @@ function setLiveSource(src){
   state.liveSource=src;
   document.getElementById('srcYahoo').classList.toggle('on',src==='yahoo');
   document.getElementById('srcSaxo').classList.toggle('on',src==='saxo');
-  document.getElementById('srcIbkr').classList.toggle('on',src==='ibkr');
+  document.getElementById('srcIbkr')?.classList.toggle('on',src==='ibkr');
   updateSaxoUI();
   updateCmpControls();
   if(src==='yahoo') fetchLiveData();
@@ -2201,7 +2191,8 @@ function updateSaxoUI(){
   const showIbkr=state.mode==='live'&&state.liveSource==='ibkr';
   const showOpra=showSaxo||showIbkr;
   document.getElementById('saxoControls').style.display=showSaxo?'flex':'none';
-  document.getElementById('ibkrControls').style.display=showIbkr?'flex':'none';
+  const _ibkrCtrl=document.getElementById('ibkrControls');
+  if(_ibkrCtrl) _ibkrCtrl.style.display=showIbkr?'flex':'none';
   document.getElementById('opraMsg').style.display=showOpra?'':'none';
 }
 
