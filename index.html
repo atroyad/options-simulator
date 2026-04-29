@@ -270,9 +270,15 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
         <button class="btn" style="font-size:10px;padding:3px 8px" onclick="saxoOAuthLogin()">🔐 Login</button>
         <span id="saxoAuthStatusLive" style="font-size:9px;color:var(--mut)"></span>
       </div>
-      <!-- IBKR placeholder -->
-      <div id="ibkrControls" style="display:none;align-items:center;gap:4px">
-        <span style="font-size:9px;color:var(--ylw)">IBKR coming soon</span>
+      <!-- IBKR Client Portal Gateway -->
+      <div id="ibkrControls" style="display:none;align-items:center;gap:4px;flex-wrap:wrap">
+        <input id="ibkrGatewayInput" type="text" value="https://localhost:5000"
+          placeholder="https://localhost:5000"
+          title="URL of your IBKR Client Portal Gateway. Start gateway with: ./bin/run.sh root/conf.yaml, then open this URL in the browser and log in."
+          style="font-size:10px;padding:2px 5px;width:170px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px"
+          oninput="state.ibkrGatewayUrl=this.value.trim()">
+        <button class="btn" id="ibkrConnectBtn" style="font-size:10px;padding:3px 8px" onclick="ibkrConnect()">Connect</button>
+        <span id="ibkrStatus" style="font-size:9px;color:var(--mut)">Not connected</span>
       </div>
       <!-- OPRA note -->
       <span id="opraMsg" style="display:none;font-size:9px;color:var(--mut)">
@@ -1288,7 +1294,10 @@ const state={
   smileSkew:-0.12,   // log-moneyness skew (<0 = put skew, typical for equities)
   smileConv:0.20,    // convexity / curvature of the smile
   termSlope:0,       // term-structure exponent ζ: σ(T) = σ_ref × (T_ref/T)^ζ, T_ref = 30d
-  liveSource:'yahoo',  // 'yahoo' | 'saxo'
+  liveSource:'yahoo',  // 'yahoo' | 'saxo' | 'ibkr'
+  ibkrGatewayUrl:'https://localhost:5000', // Client Portal Gateway URL
+  ibkrConnected:false,                     // true once auth/status confirmed
+  ibkrStockConid:null,                     // cached conid of current ticker
   saxoToken:'',        // Saxo access token (session memory only, never persisted)
   saxoEnv:'live',      // always use live endpoint
   saxoClientId:'47fee9f3ee124a078fc4b4499088dec4',
@@ -1303,9 +1312,9 @@ const state={
 let _liveTimer=null;
 function startLiveTimer(){
   stopLiveTimer();
-  // Saxo: 30 s (data is 15-min delayed + full fetch takes ~5-10 s anyway)
+  // Saxo/IBKR: 30 s (full chain fetch takes several seconds anyway)
   // Yahoo: 5 s (just spot + one options page)
-  const delay=state.liveSource==='saxo'?30000:5000;
+  const delay=(state.liveSource==='saxo'||state.liveSource==='ibkr')?30000:5000;
   _liveTimer=setInterval(()=>{
     if(state.mode==='live'&&!document.hidden) fetchLiveData();
   },delay);
@@ -2183,7 +2192,8 @@ function setLiveSource(src){
   updateSaxoUI();
   updateCmpControls();
   if(src==='yahoo') fetchLiveData();
-  // Saxo: user must click Login first; IBKR: not yet implemented
+  // Saxo: user must click Login first
+  // IBKR: user must click Connect first (checks gateway auth)
 }
 
 function updateSaxoUI(){
@@ -2386,6 +2396,304 @@ async function saxoOAuthLogin(){
 
 function handleSaxoCallback(){} // legacy hash flow — kept for safety
 
+// ═══════════════════════════════════════════════════════════════════════════
+// IBKR CLIENT PORTAL GATEWAY DATA SOURCE
+// Requires the IBKR Client Portal Gateway running locally on your machine.
+//
+// One-time setup:
+//   1. Download Client Portal Gateway from interactivebrokers.com
+//      (TWS/IB Gateway download page → "Client Portal Web API")
+//   2. Unzip and run:  ./bin/run.sh root/conf.yaml   (Mac/Linux)
+//                      bin\run.bat root\conf.yaml     (Windows)
+//   3. Open the gateway URL in THIS browser, trust the self-signed cert,
+//      then log in with your IBKR credentials.
+//   4. Return here and click "Connect".
+//
+// CORS: if connection fails with a network error, add this to conf.yaml:
+//   allowedOrigins:
+//     - "*"
+//   then restart the gateway.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function ibkrBase(){
+  return (state.ibkrGatewayUrl||'https://localhost:5000').replace(/\/$/,'');
+}
+function ibkrFetch(path,opts={}){
+  return fetch(ibkrBase()+path,{credentials:'include',...opts});
+}
+async function ibkrJson(path,opts){
+  try{
+    const r=opts?await ibkrFetch(path,opts):await ibkrFetch(path);
+    if(!r.ok) return null;
+    return await r.json();
+  }catch(_){return null;}
+}
+async function ibkrPost(path,body){
+  return ibkrJson(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+}
+
+async function ibkrConnect(){
+  const statusEl=document.getElementById('ibkrStatus');
+  const btn=document.getElementById('ibkrConnectBtn');
+  // Sync gateway URL from input in case user edited it
+  const inp=document.getElementById('ibkrGatewayInput');
+  if(inp) state.ibkrGatewayUrl=inp.value.trim();
+  statusEl.textContent='Connecting…'; statusEl.style.color='var(--mut)';
+  btn.disabled=true;
+  try{
+    const d=await ibkrJson('/v1/api/iserver/auth/status');
+    if(!d) throw new Error('No response — gateway not reachable. Is it running? Open the gateway URL in this browser and trust the cert.');
+    if(d.authenticated){
+      state.ibkrConnected=true;
+      statusEl.textContent='✓ Connected'; statusEl.style.color='var(--grn)';
+      fetchLiveData();
+    } else {
+      statusEl.textContent='Not authenticated — open gateway URL in browser and log in, then retry';
+      statusEl.style.color='var(--ylw)';
+    }
+  }catch(e){
+    statusEl.textContent=e.message.includes('Failed to fetch')||e.message.includes('NetworkError')
+      ?'Cannot reach gateway — is it running? Trust the self-signed cert first (open gateway URL).'
+      :'Error: '+e.message;
+    statusEl.style.color='var(--red)';
+    state.ibkrConnected=false;
+  }finally{ btn.disabled=false; }
+}
+
+async function fetchIbkrData(btn,status){
+  const ticker=state.ticker||'SPY';
+  try{
+    // 1. Auth check
+    const auth=await ibkrJson('/v1/api/iserver/auth/status');
+    if(!auth?.authenticated){
+      status.textContent='IBKR: session expired — click Connect';
+      status.style.color='var(--ylw)';
+      state.ibkrConnected=false;
+      const el=document.getElementById('ibkrStatus');
+      if(el){el.textContent='Session expired';el.style.color='var(--ylw)';}
+      btn.disabled=false; btn.textContent='⟳ Fetch';
+      return;
+    }
+
+    // 2. Search stock → conid + option months
+    status.textContent=`IBKR: searching ${ticker}…`;
+    const searchRes=await ibkrPost('/v1/api/iserver/secdef/search',{symbol:ticker,secType:'STK',name:false});
+    if(!searchRes?.length) throw new Error(`No results for "${ticker}" — check ticker symbol`);
+    const stock=searchRes[0];
+    const conid=stock.conid;
+    state.ibkrStockConid=conid;
+
+    // Months come from sections as "APR25;MAY25;JUN25;…"
+    const optSection=(stock.sections||[]).find(s=>s.secType==='OPT');
+    const months=(optSection?.months||'').split(';').filter(Boolean).slice(0,4);
+    if(!months.length) throw new Error(`No options listed for "${ticker}"`);
+
+    // 3. Spot price (two-pass snapshot: subscribe → wait → read)
+    status.textContent='IBKR: fetching spot…';
+    await ibkrFetch(`/v1/api/iserver/marketdata/snapshot?conids=${conid}&fields=31,84,86`);
+    await new Promise(r=>setTimeout(r,400));
+    const spotMd=await ibkrJson(`/v1/api/iserver/marketdata/snapshot?conids=${conid}&fields=31,84,86`);
+    const se=spotMd?.[0]||{};
+    const spotRaw=parseFloat(se['31']||se['84']||se['86']||0);
+    if(spotRaw>0) syncSpot(Math.round(spotRaw*100)/100);
+    const S=state.spot||spotRaw||100;
+
+    // 4. Get strike lists for each month (parallel)
+    status.textContent=`IBKR: fetching strikes (${months.length} expiries)…`;
+    const MON_PCT=0.20; // ±20% moneyness filter
+    const strikesByMonth=await Promise.all(months.map(async month=>{
+      const d=await ibkrJson(`/v1/api/iserver/secdef/strikes?conid=${conid}&sectype=OPT&month=${month}&exchange=SMART`);
+      if(!d) return {month,calls:[],puts:[]};
+      const filt=arr=>(arr||[]).filter(k=>Math.abs(k-S)/S<=MON_PCT);
+      return {month,calls:filt(d.call),puts:filt(d.put)};
+    }));
+
+    // 5. Resolve option conids for each strike × right (batched parallel)
+    status.textContent='IBKR: resolving contracts…';
+    const infoJobs=[];
+    for(const {month,calls,puts} of strikesByMonth){
+      for(const k of calls) infoJobs.push({month,strike:k,right:'C'});
+      for(const k of puts)  infoJobs.push({month,strike:k,right:'P'});
+    }
+    const IBATCH=20; // parallel info requests per batch
+    const optConids=[]; // [{conid,K,type,exp}]
+    for(let i=0;i<infoJobs.length;i+=IBATCH){
+      const slice=infoJobs.slice(i,i+IBATCH);
+      const results=await Promise.all(slice.map(async({month,strike,right})=>{
+        const d=await ibkrJson(`/v1/api/iserver/secdef/info?conid=${conid}&sectype=OPT&month=${month}&exchange=SMART&strike=${strike}&right=${right}`);
+        const opt=d?.[0];
+        if(!opt?.conid) return null;
+        const md=opt.maturityDate||''; // "YYYYMMDD"
+        const exp=md.length===8?`${md.slice(0,4)}-${md.slice(4,6)}-${md.slice(6,8)}`:null;
+        return {conid:opt.conid,K:+strike,type:right==='C'?'call':'put',exp};
+      }));
+      for(const r of results) if(r) optConids.push(r);
+    }
+    if(!optConids.length) throw new Error('No option contracts found — ensure options data is included in your IBKR data subscription');
+
+    // 6. Market data for all option conids (subscribe → wait → read, batch 50)
+    status.textContent=`IBKR: fetching prices for ${optConids.length} options…`;
+    const MBATCH=50;
+    const mdMap={};
+    // Subscribe pass
+    for(let i=0;i<optConids.length;i+=MBATCH){
+      const ids=optConids.slice(i,i+MBATCH).map(o=>o.conid).join(',');
+      await ibkrFetch(`/v1/api/iserver/marketdata/snapshot?conids=${ids}&fields=31,84,86,7633`);
+    }
+    await new Promise(r=>setTimeout(r,600));
+    // Read pass
+    for(let i=0;i<optConids.length;i+=MBATCH){
+      const batch=optConids.slice(i,i+MBATCH);
+      const ids=batch.map(o=>o.conid).join(',');
+      const md=await ibkrJson(`/v1/api/iserver/marketdata/snapshot?conids=${ids}&fields=31,84,86,7633`);
+      for(const entry of (md||[])){
+        mdMap[entry.conid]={
+          bid:parseFloat(entry['84']||0)||0,
+          ask:parseFloat(entry['86']||0)||0,
+          iv:parseFloat(entry['7633']||0)/100, // IBKR returns IV as %, convert to decimal
+        };
+      }
+    }
+
+    // 7. Build state.liveOptions
+    state.liveOptions=[];
+    const nowMs=Date.now();
+    for(const opt of optConids){
+      const md=mdMap[opt.conid];
+      if(!md) continue;
+      const {bid,ask}=md;
+      if(bid<=0&&ask<=0) continue;
+      const mid=(bid+ask)/2;
+      if(mid<=0.001) continue;
+      // Use IBKR's IV field if available; otherwise back-solve from mid
+      let iv=md.iv>0.01?md.iv:0;
+      if(!iv&&opt.exp){
+        const T=(new Date(opt.exp).getTime()-nowMs)/(365.25*24*3600*1000);
+        if(T>0.001){
+          const calc=bsIV(mid,S,opt.K,T,state.rate,opt.type);
+          if(calc>0.01) iv=calc;
+        }
+      }
+      if(!iv) continue;
+      state.liveOptions.push({K:opt.K,iv,type:opt.type,exp:opt.exp,bid,ask});
+    }
+    if(!state.liveOptions.length) throw new Error('No valid bid/ask prices received — market may be closed, or options data subscription required');
+
+    // 8. Fit smile + update UI
+    fitSmileAndFinish(S,status,btn,'','IBKR');
+
+  }catch(e){
+    status.textContent=`IBKR: ${e.message}`;
+    status.style.color='var(--red)';
+    console.error('IBKR fetch error:',e);
+    btn.disabled=false; btn.textContent='⟳ Fetch';
+  }
+}
+
+// IBKR comparison-tab fetch — same gateway flow but for an arbitrary ticker
+async function _cmpFetchIbkr(ticker,statusEl){
+  if(!state.ibkrConnected){
+    if(statusEl) statusEl.textContent='IBKR: not connected — use Connect button first';
+    return null;
+  }
+  const auth=await ibkrJson('/v1/api/iserver/auth/status');
+  if(!auth?.authenticated){
+    if(statusEl) statusEl.textContent='IBKR: session expired — reconnect first';
+    state.ibkrConnected=false;
+    return null;
+  }
+  if(statusEl) statusEl.textContent=`IBKR: searching ${ticker}…`;
+  const searchRes=await ibkrPost('/v1/api/iserver/secdef/search',{symbol:ticker,secType:'STK',name:false});
+  if(!searchRes?.length){ if(statusEl) statusEl.textContent=`IBKR: no results for ${ticker}`; return null; }
+  const stock=searchRes[0];
+  const conid=stock.conid;
+  const optSection=(stock.sections||[]).find(s=>s.secType==='OPT');
+  const months=(optSection?.months||'').split(';').filter(Boolean).slice(0,3);
+  if(!months.length){ if(statusEl) statusEl.textContent=`IBKR: no options for ${ticker}`; return null; }
+
+  // Spot (two-pass)
+  await ibkrFetch(`/v1/api/iserver/marketdata/snapshot?conids=${conid}&fields=31,84,86`);
+  await new Promise(r=>setTimeout(r,400));
+  const spotMd=await ibkrJson(`/v1/api/iserver/marketdata/snapshot?conids=${conid}&fields=31,84,86`);
+  const se=spotMd?.[0]||{};
+  const spot=parseFloat(se['31']||se['84']||se['86']||0);
+  if(!spot){ if(statusEl) statusEl.textContent=`IBKR: no spot for ${ticker}`; return null; }
+  const S=spot;
+
+  // Strikes
+  if(statusEl) statusEl.textContent=`IBKR: fetching ${ticker} chain…`;
+  const MON_PCT=0.20;
+  const strikesByMonth=await Promise.all(months.map(async month=>{
+    const d=await ibkrJson(`/v1/api/iserver/secdef/strikes?conid=${conid}&sectype=OPT&month=${month}&exchange=SMART`);
+    if(!d) return {month,calls:[],puts:[]};
+    const filt=arr=>(arr||[]).filter(k=>Math.abs(k-S)/S<=MON_PCT);
+    return {month,calls:filt(d.call),puts:filt(d.put)};
+  }));
+
+  const infoJobs=[];
+  for(const {month,calls,puts} of strikesByMonth){
+    for(const k of calls) infoJobs.push({month,strike:k,right:'C'});
+    for(const k of puts)  infoJobs.push({month,strike:k,right:'P'});
+  }
+  const IBATCH=20;
+  const optConids=[];
+  for(let i=0;i<infoJobs.length;i+=IBATCH){
+    const slice=infoJobs.slice(i,i+IBATCH);
+    const results=await Promise.all(slice.map(async({month,strike,right})=>{
+      const d=await ibkrJson(`/v1/api/iserver/secdef/info?conid=${conid}&sectype=OPT&month=${month}&exchange=SMART&strike=${strike}&right=${right}`);
+      const opt=d?.[0];
+      if(!opt?.conid) return null;
+      const md=opt.maturityDate||'';
+      const exp=md.length===8?`${md.slice(0,4)}-${md.slice(4,6)}-${md.slice(6,8)}`:null;
+      return {conid:opt.conid,K:+strike,type:right==='C'?'call':'put',exp};
+    }));
+    for(const r of results) if(r) optConids.push(r);
+  }
+  if(!optConids.length){ if(statusEl) statusEl.textContent=`IBKR: no option contracts for ${ticker}`; return null; }
+
+  const MBATCH=50;
+  const mdMap={};
+  for(let i=0;i<optConids.length;i+=MBATCH){
+    const ids=optConids.slice(i,i+MBATCH).map(o=>o.conid).join(',');
+    await ibkrFetch(`/v1/api/iserver/marketdata/snapshot?conids=${ids}&fields=31,84,86,7633`);
+  }
+  await new Promise(r=>setTimeout(r,600));
+  for(let i=0;i<optConids.length;i+=MBATCH){
+    const ids=optConids.slice(i,i+MBATCH).map(o=>o.conid).join(',');
+    const md=await ibkrJson(`/v1/api/iserver/marketdata/snapshot?conids=${ids}&fields=31,84,86,7633`);
+    for(const entry of (md||[])){
+      mdMap[entry.conid]={
+        bid:parseFloat(entry['84']||0)||0,
+        ask:parseFloat(entry['86']||0)||0,
+        iv:parseFloat(entry['7633']||0)/100,
+      };
+    }
+  }
+
+  const nowMs=Date.now();
+  const liveOptions=[];
+  for(const opt of optConids){
+    const md=mdMap[opt.conid];
+    if(!md) continue;
+    const {bid,ask}=md;
+    if(bid<=0&&ask<=0) continue;
+    const mid=(bid+ask)/2;
+    if(mid<=0.001) continue;
+    let iv=md.iv>0.01?md.iv:0;
+    if(!iv&&opt.exp){
+      const T=(new Date(opt.exp).getTime()-nowMs)/(365.25*24*3600*1000);
+      if(T>0.001){
+        const calc=bsIV(mid,S,opt.K,T,state.rate,opt.type);
+        if(calc>0.01) iv=calc;
+      }
+    }
+    if(!iv) continue;
+    liveOptions.push({K:opt.K,iv,type:opt.type,exp:opt.exp,bid,ask});
+  }
+  if(!liveOptions.length){ if(statusEl) statusEl.textContent=`IBKR: no priced options for ${ticker} (market closed?)`; return null; }
+  return {spot:Math.round(S*100)/100, liveOptions};
+}
+
 // ── Handles redirect-back from Saxo (mobile / popup-blocked fallback) ──
 async function handleSaxoRedirectCallback(code,pkce){
   // Clean up ?code=... from address bar without reload
@@ -2441,9 +2749,7 @@ async function fetchLiveData(){
     return;
   }
   if(state.liveSource==='ibkr'){
-    const status=document.getElementById('liveStatus');
-    if(status){ status.textContent='IBKR integration not yet available'; status.style.color='var(--ylw)'; }
-    btn.disabled=false; btn.textContent='⟳ Fetch';
+    await fetchIbkrData(btn,status);
     return;
   }
   try{
@@ -2560,7 +2866,7 @@ function exportOptionsData(){
   navigator.clipboard?.writeText(header+json).catch(()=>{});
 }
 
-function fitSmileAndFinish(spot,status,btn,note=''){
+function fitSmileAndFinish(spot,status,btn,note='',source=''){
   // Set ATM IV from live options — prefer ATM calls, fall back to all options
   const validOpts=state.liveOptions.filter(o=>o.iv>0.05&&o.iv<5);
   const calls=validOpts.filter(o=>o.type==='call');
@@ -2579,7 +2885,8 @@ function fitSmileAndFinish(spot,status,btn,note=''){
     if(smileP) _smileFitted=true;
   }
   const ivStr=_atmIV>0?` · ATM IV ${(_atmIV*100).toFixed(0)}%`:'';
-  status.textContent=`Saxo: $${spot.toFixed(2)}${ivStr} · ${state.liveOptions.length} opts${note}${_smileFitted?' · smile fitted':''} · ⟳ auto`;
+  const _srcLabel=source||'Saxo';
+  status.textContent=`${_srcLabel}: $${spot.toFixed(2)}${ivStr} · ${state.liveOptions.length} opts${note}${_smileFitted?' · smile fitted':''} · ⟳ auto`;
   status.style.color='var(--grn)';
   btn.textContent='⟳ Refresh';btn.disabled=false;
   if(state.liveOptions.length>0) setLiveLock(true);
@@ -5413,7 +5720,7 @@ async function addCmpTicker(ticker){
   try{
     let result=null;
     if(state.liveSource==='saxo') result=await _cmpFetchSaxo(ticker,statusEl);
-    else if(state.liveSource==='ibkr'){ if(statusEl) statusEl.textContent='IBKR not yet implemented — use Yahoo or Saxo'; return; }
+    else if(state.liveSource==='ibkr') result=await _cmpFetchIbkr(ticker,statusEl);
     else result=await _cmpFetchYahoo(ticker,statusEl);
     if(!result) return;
     _cmpTickers.push({ticker,...result});
@@ -5585,7 +5892,7 @@ function updateCmpControls(){
   if(note){
     const src=state.liveSource;
     note.textContent=src==='saxo'?'Additional tickers fetched via Saxo (requires active Saxo session)'
-      :src==='ibkr'?'IBKR not yet available — use Yahoo or Saxo'
+      :src==='ibkr'?'Additional tickers fetched via IBKR Gateway (requires active gateway session)'
       :'Additional tickers fetched via Yahoo Finance (delayed)';
   }
   if(isSim) renderCmpSimList();

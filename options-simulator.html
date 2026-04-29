@@ -270,9 +270,15 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
         <button class="btn" style="font-size:10px;padding:3px 8px" onclick="saxoOAuthLogin()">🔐 Login</button>
         <span id="saxoAuthStatusLive" style="font-size:9px;color:var(--mut)"></span>
       </div>
-      <!-- IBKR placeholder -->
-      <div id="ibkrControls" style="display:none;align-items:center;gap:4px">
-        <span style="font-size:9px;color:var(--ylw)">IBKR coming soon</span>
+      <!-- IBKR Client Portal Gateway -->
+      <div id="ibkrControls" style="display:none;align-items:center;gap:4px;flex-wrap:wrap">
+        <input id="ibkrGatewayInput" type="text" value="https://localhost:5000"
+          placeholder="https://localhost:5000"
+          title="URL of your IBKR Client Portal Gateway. Start gateway with: ./bin/run.sh root/conf.yaml, then open this URL in the browser and log in."
+          style="font-size:10px;padding:2px 5px;width:170px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px"
+          oninput="state.ibkrGatewayUrl=this.value.trim()">
+        <button class="btn" id="ibkrConnectBtn" style="font-size:10px;padding:3px 8px" onclick="ibkrConnect()">Connect</button>
+        <span id="ibkrStatus" style="font-size:9px;color:var(--mut)">Not connected</span>
       </div>
       <!-- OPRA note -->
       <span id="opraMsg" style="display:none;font-size:9px;color:var(--mut)">
@@ -281,7 +287,7 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
     </div>
     <!-- Ticker input -->
     <div id="tickerRow" style="display:none;align-items:center;gap:4px">
-      <input id="tickerInput" type="text" value="MSTR" placeholder="Ticker"
+      <input id="tickerInput" type="text" value="" placeholder="Ticker"
         style="font-size:11px;padding:3px 6px;width:72px;background:var(--sur2);
           border:1px solid var(--bdr);color:var(--txt);border-radius:3px;text-transform:uppercase;font-weight:700"
         oninput="setTicker(this.value)">
@@ -313,7 +319,7 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
       <div class="bd">
         <label class="lbl">Ticker Symbol</label>
         <div class="row" style="gap:5px;margin-bottom:6px">
-          <input id="sidebarTicker" type="text" value="MSTR" placeholder="e.g. AAPL"
+          <input id="sidebarTicker" type="text" value="" placeholder="e.g. AAPL"
             style="text-transform:uppercase;font-weight:700;letter-spacing:1px"
             oninput="setTicker(this.value)"
             title="Enter any US stock ticker — used in Live mode only">
@@ -360,7 +366,7 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
         <label class="lbl" style="margin-top:8px">IV Term Structure</label>
         <div style="font-size:8px;color:var(--mut);margin-bottom:4px;line-height:1.4">
           Power-law: σ(T) = σ_ref × (30d/T)<sup>ζ</sup>. Affects all expiries in sim mode.<br>
-          ζ &gt; 0 → inverted (short IV higher, typical MSTR). ζ = 0 → flat.
+          ζ &gt; 0 → inverted (short IV higher, typical high-vol stock). ζ = 0 → flat.
         </div>
         <div class="row" style="gap:4px;margin-bottom:6px;align-items:center">
           <span style="color:var(--mut);font-size:9px;min-width:22px">ζ</span>
@@ -412,17 +418,16 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
         <label class="lbl" style="margin-top:10px">Spot-Vol Correlation Band</label>
         <div style="font-size:8px;color:var(--mut);margin-bottom:4px;line-height:1.4">
           Grey band on P&L chart shows how IV moving with spot changes outcomes.
-          Down → IV spikes (protects long vega). Up → IV compresses (caps gains).
+          ρ&gt;0: spot up → IV down (leverage effect). ρ&lt;0: spot up → IV up (momentum/FOMO).
         </div>
         <div class="row" style="gap:4px;margin-bottom:3px">
           <span style="color:var(--mut);min-width:12px;font-size:9px">ρ</span>
-          <input type="range" id="spotVolRhoIn" min="0" max="1.5" step="0.05" value="0.75"
-            style="flex:1" oninput="state.spotVolRho=+this.value;document.getElementById('spotVolRhoVal').textContent=(+this.value).toFixed(2);renderChart();scheduleHeatmap()">
+          <input type="range" id="spotVolRhoIn" min="-2" max="2" step="0.05" value="0.75"
+            style="flex:1" oninput="state.spotVolRho=+this.value;document.getElementById('spotVolRhoVal').textContent=(+this.value).toFixed(2);renderChart();scheduleHeatmap();if(_gSimSpotActive){if(_gSimSpot)_syncSimSpotSlider(_gSimSpot);renderGreeksDashboard();}">
           <span id="spotVolRhoVal" style="font-family:monospace;color:var(--ylw);min-width:34px;text-align:right">0.75</span>
         </div>
         <div style="font-size:8px;color:var(--mut);line-height:1.4;margin-bottom:5px">
-          0 = no correlation · 0.5 = mild · 0.75 = typical volatile stock · 1.5 = extreme.<br>
-          Band uses IV(S') = ATM-IV × (S/S')^ρ. Set ρ=0 to hide band.
+          IV(S') = IV₀ × (S/S')^ρ &nbsp;·&nbsp; ρ=0: no change &nbsp;·&nbsp; ρ=0.75: typical equity (vol crush on rally) &nbsp;·&nbsp; ρ&lt;0: momentum regime (vol spikes on rally).
         </div>
 
         <!-- Heatmap vol-correlation toggle -->
@@ -768,7 +773,27 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
                 oninput="onRangePctSlider('g',+this.value)">
             </span>
           </div>
+          <!-- Scenario spot simulation row -->
+          <div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:2px 0 3px">
+            <button id="gSimSpotBtn" onclick="toggleGreeksSimSpot()"
+              style="font-size:8px;padding:2px 7px;border:1px solid var(--bdr);border-radius:3px;background:var(--sur2);color:var(--mut);cursor:pointer;white-space:nowrap">
+              + Scenario spot
+            </button>
+            <div id="gSimSpotRow" style="display:none;flex:1;align-items:center;gap:5px;flex-wrap:wrap">
+              <span style="font-size:9px;color:var(--mut);white-space:nowrap">Scenario S:</span>
+              <input type="range" id="gSimSpotSlider" min="1" max="1000" step="1" value="170"
+                style="flex:1;min-width:80px;accent-color:var(--ylw);height:3px"
+                oninput="onGreeksSimSpotSlider(+this.value)">
+              <span id="gSimSpotVal" style="font-family:monospace;font-size:9px;color:var(--ylw);min-width:44px">$170</span>
+              <span id="gSimSpotIV" style="font-size:8px;color:var(--mut);min-width:70px"></span>
+              <button onclick="resetGreeksSimSpot()" style="font-size:8px;padding:1px 5px;border:1px solid var(--bdr);border-radius:3px;background:var(--sur2);color:var(--mut);cursor:pointer">↺</button>
+            </div>
+          </div>
+          <!-- ATM price summary line — populated by renderGreeksDashboard -->
+          <div id="gScenPriceInfo" style="display:none;font-size:8px;color:var(--mut);padding:1px 0 3px;line-height:1.6;font-family:monospace"></div>
         </div>
+        <!-- Scenario comparison table — vs-Strike mode, populated when scenario spot active -->
+        <div id="gScenTable" style="display:none;margin-top:8px;overflow-x:auto"></div>
         <!-- vs-Expiry controls -->
         <div id="gExpiryControls" style="display:none;margin-bottom:4px">
           <div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin-bottom:4px">
@@ -1068,13 +1093,21 @@ input[type=range]{width:100%;accent-color:var(--blu);cursor:pointer;
             <option value="all">All expiries</option>
           </select>
           <!-- Sim-mode expiry grid controls (hidden in live mode) -->
-          <span id="simExpControls" style="display:flex;align-items:center;gap:4px;font-size:9px;color:var(--mut)">
+          <span id="simExpControls" style="display:flex;align-items:center;gap:6px;font-size:9px;color:var(--mut);flex-wrap:wrap">
             Step:&nbsp;<input type="number" id="simDteStep" value="7" min="1" max="365" step="1"
               style="width:34px;font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 3px"
               oninput="onSimExpGridChange()">d
             &nbsp;Count:&nbsp;<input type="number" id="simExpCount" value="50" min="1" max="200" step="1"
               style="width:36px;font-size:9px;background:var(--sur2);border:1px solid var(--bdr);color:var(--txt);border-radius:3px;padding:1px 3px"
               oninput="onSimExpGridChange()">
+            &nbsp;Moneyness&nbsp;±<span id="simMoneynessVal" style="font-family:monospace;color:var(--ylw);min-width:28px">30%</span>:&nbsp;
+            <input type="range" id="simMoneynessSlider" min="1" max="100" step="1" value="30"
+              style="width:70px;accent-color:var(--ylw);height:3px"
+              oninput="document.getElementById('simMoneynessVal').textContent=this.value+'%';renderPricesTable()">
+            &nbsp;Strike step&nbsp;<span id="simStrikeStepVal" style="font-family:monospace;color:var(--ylw);min-width:22px">$1</span>:&nbsp;
+            <input type="range" id="simStrikeStepSlider" min="0" max="9" step="1" value="1"
+              style="width:60px;accent-color:var(--ylw);height:3px"
+              oninput="onSimStrikeStepSlider(this.value)">
           </span>
           <button id="exportBtn" onclick="exportOptionsData()" style="font-size:9px;padding:2px 7px;background:var(--sur2);border:1px solid var(--bdr);border-radius:3px;color:var(--txt);cursor:pointer;white-space:nowrap">⬇ Export CSV</button>
           <span id="pcLiveNote" style="font-size:9px;color:var(--ylw)"></span>
@@ -1248,7 +1281,7 @@ function bsAll(S,K,T,r,sig,type){
 // STATE
 // ═══════════════════════════════════════════════════════
 const state={
-  ticker:'MSTR',
+  ticker:'',
   spot:200, iv:0.80, rate:0.045,
   simDate:new Date('2026-04-09T12:00:00'),
   legs:[], shares:700, cash:16000, leverage:1.0, nid:1,
@@ -1261,7 +1294,10 @@ const state={
   smileSkew:-0.12,   // log-moneyness skew (<0 = put skew, typical for equities)
   smileConv:0.20,    // convexity / curvature of the smile
   termSlope:0,       // term-structure exponent ζ: σ(T) = σ_ref × (T_ref/T)^ζ, T_ref = 30d
-  liveSource:'yahoo',  // 'yahoo' | 'saxo'
+  liveSource:'yahoo',  // 'yahoo' | 'saxo' | 'ibkr'
+  ibkrGatewayUrl:'https://localhost:5000', // Client Portal Gateway URL
+  ibkrConnected:false,                     // true once auth/status confirmed
+  ibkrStockConid:null,                     // cached conid of current ticker
   saxoToken:'',        // Saxo access token (session memory only, never persisted)
   saxoEnv:'live',      // always use live endpoint
   saxoClientId:'47fee9f3ee124a078fc4b4499088dec4',
@@ -1276,9 +1312,9 @@ const state={
 let _liveTimer=null;
 function startLiveTimer(){
   stopLiveTimer();
-  // Saxo: 30 s (data is 15-min delayed + full fetch takes ~5-10 s anyway)
+  // Saxo/IBKR: 30 s (full chain fetch takes several seconds anyway)
   // Yahoo: 5 s (just spot + one options page)
-  const delay=state.liveSource==='saxo'?30000:5000;
+  const delay=(state.liveSource==='saxo'||state.liveSource==='ibkr')?30000:5000;
   _liveTimer=setInterval(()=>{
     if(state.mode==='live'&&!document.hidden) fetchLiveData();
   },delay);
@@ -1458,7 +1494,8 @@ function portGreeks(){
   let d=0,g=0,th=0,v=0;
   for(const l of state.legs){
     const T=getT(l.exp);if(T<=0)continue;
-    const gr=bsAll(state.spot,l.K,T,state.rate,state.iv,l.type);
+    const legIV=liveChainIV(l.K,l.exp,l.type)??state.iv;
+    const gr=bsAll(state.spot,l.K,T,state.rate,legIV,l.type);
     const s=(l.action==='buy'?1:-1)*l.qty*100;
     d+=gr.delta*s;g+=gr.gamma*s;th+=gr.theta*s;v+=gr.vega*s;
   }
@@ -1565,7 +1602,7 @@ function setPriceFilter(f){
 function moneynessCell(K,S,type){
   const pct=type==='call'?(S-K)/S*100:(K-S)/S*100; // positive = ITM
   const abs=Math.abs(pct).toFixed(1);
-  if(Math.abs(pct)<2) return{label:'ATM',color:'var(--blu)'};
+  if(Math.abs(pct)<1) return{label:'ATM',color:'var(--blu)'};
   if(pct>0) return{label:`ITM −${abs}%`,color:'var(--red)'};
   return{label:`OTM +${abs}%`,color:'var(--grn)'};
 }
@@ -1614,6 +1651,17 @@ function onSimExpGridChange(){
   renderGreeksDashboard();
 }
 
+const _SIM_STRIKE_STEPS=[0.5,1,2,2.5,5,10,25,50,100,250];
+function onSimStrikeStepSlider(idx){
+  const step=_SIM_STRIKE_STEPS[+idx]??1;
+  document.getElementById('simStrikeStepVal').textContent='$'+step;
+  renderPricesTable();
+}
+function getSimStrikeStep(){
+  const idx=+(document.getElementById('simStrikeStepSlider')?.value??2);
+  return _SIM_STRIKE_STEPS[idx]??1;
+}
+
 function renderPricesTable(){
   const tbody=document.getElementById('pricesBody');
   const expirySelect=document.getElementById('pcExpiry');
@@ -1636,7 +1684,13 @@ function renderPricesTable(){
     if(note) note.textContent='Simulated · BS model';
 
     const S=state.spot;
-    const strikes=simStrikeGrid(S);
+    const monPct=+(document.getElementById('simMoneynessSlider')?.value||30)/100;
+    const kLo=S*(1-monPct), kHi=S*(1+monPct);
+    const step=getSimStrikeStep();
+    const lo=Math.max(step,Math.round(kLo/step)*step);
+    const hi=Math.round(kHi/step)*step;
+    const strikes=[];
+    for(let k=lo;k<=hi+step*0.01;k=+(k+step).toFixed(6)) strikes.push(+k.toFixed(4));
     const T=Math.max(1/365,getT(selExp));
     const rows=[];
     for(const K of strikes){
@@ -1644,7 +1698,6 @@ function renderPricesTable(){
         if(_priceFilter!=='all'&&_priceFilter!==type) continue;
         const iv=state.ivSurface==='smile'?smileIV(K,S,atmIV(T)):atmIV(T);
         const bs=bsAll(S,K,T,state.rate,iv,type);
-        if(bs.price<0.005) continue; // skip near-zero value options
         rows.push({K,type,exp:selExp,iv,price:bs.price,delta:bs.delta,gamma:bs.gamma,theta:bs.theta,vega:bs.vega,sim:true});
       }
     }
@@ -2080,7 +2133,7 @@ function renderCustomDayPills(){
 // ═══════════════════════════════════════════════════════
 function setTicker(raw){
   const t=(raw||'').toUpperCase().replace(/[^A-Z0-9.]/g,'').slice(0,8);
-  state.ticker=t||'MSTR';
+  state.ticker=t||'Ticker';
   // sync both inputs
   const hi=document.getElementById('tickerInput');
   const si=document.getElementById('sidebarTicker');
@@ -2139,7 +2192,8 @@ function setLiveSource(src){
   updateSaxoUI();
   updateCmpControls();
   if(src==='yahoo') fetchLiveData();
-  // Saxo: user must click Login first; IBKR: not yet implemented
+  // Saxo: user must click Login first
+  // IBKR: user must click Connect first (checks gateway auth)
 }
 
 function updateSaxoUI(){
@@ -2342,6 +2396,304 @@ async function saxoOAuthLogin(){
 
 function handleSaxoCallback(){} // legacy hash flow — kept for safety
 
+// ═══════════════════════════════════════════════════════════════════════════
+// IBKR CLIENT PORTAL GATEWAY DATA SOURCE
+// Requires the IBKR Client Portal Gateway running locally on your machine.
+//
+// One-time setup:
+//   1. Download Client Portal Gateway from interactivebrokers.com
+//      (TWS/IB Gateway download page → "Client Portal Web API")
+//   2. Unzip and run:  ./bin/run.sh root/conf.yaml   (Mac/Linux)
+//                      bin\run.bat root\conf.yaml     (Windows)
+//   3. Open the gateway URL in THIS browser, trust the self-signed cert,
+//      then log in with your IBKR credentials.
+//   4. Return here and click "Connect".
+//
+// CORS: if connection fails with a network error, add this to conf.yaml:
+//   allowedOrigins:
+//     - "*"
+//   then restart the gateway.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function ibkrBase(){
+  return (state.ibkrGatewayUrl||'https://localhost:5000').replace(/\/$/,'');
+}
+function ibkrFetch(path,opts={}){
+  return fetch(ibkrBase()+path,{credentials:'include',...opts});
+}
+async function ibkrJson(path,opts){
+  try{
+    const r=opts?await ibkrFetch(path,opts):await ibkrFetch(path);
+    if(!r.ok) return null;
+    return await r.json();
+  }catch(_){return null;}
+}
+async function ibkrPost(path,body){
+  return ibkrJson(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+}
+
+async function ibkrConnect(){
+  const statusEl=document.getElementById('ibkrStatus');
+  const btn=document.getElementById('ibkrConnectBtn');
+  // Sync gateway URL from input in case user edited it
+  const inp=document.getElementById('ibkrGatewayInput');
+  if(inp) state.ibkrGatewayUrl=inp.value.trim();
+  statusEl.textContent='Connecting…'; statusEl.style.color='var(--mut)';
+  btn.disabled=true;
+  try{
+    const d=await ibkrJson('/v1/api/iserver/auth/status');
+    if(!d) throw new Error('No response — gateway not reachable. Is it running? Open the gateway URL in this browser and trust the cert.');
+    if(d.authenticated){
+      state.ibkrConnected=true;
+      statusEl.textContent='✓ Connected'; statusEl.style.color='var(--grn)';
+      fetchLiveData();
+    } else {
+      statusEl.textContent='Not authenticated — open gateway URL in browser and log in, then retry';
+      statusEl.style.color='var(--ylw)';
+    }
+  }catch(e){
+    statusEl.textContent=e.message.includes('Failed to fetch')||e.message.includes('NetworkError')
+      ?'Cannot reach gateway — is it running? Trust the self-signed cert first (open gateway URL).'
+      :'Error: '+e.message;
+    statusEl.style.color='var(--red)';
+    state.ibkrConnected=false;
+  }finally{ btn.disabled=false; }
+}
+
+async function fetchIbkrData(btn,status){
+  const ticker=state.ticker||'SPY';
+  try{
+    // 1. Auth check
+    const auth=await ibkrJson('/v1/api/iserver/auth/status');
+    if(!auth?.authenticated){
+      status.textContent='IBKR: session expired — click Connect';
+      status.style.color='var(--ylw)';
+      state.ibkrConnected=false;
+      const el=document.getElementById('ibkrStatus');
+      if(el){el.textContent='Session expired';el.style.color='var(--ylw)';}
+      btn.disabled=false; btn.textContent='⟳ Fetch';
+      return;
+    }
+
+    // 2. Search stock → conid + option months
+    status.textContent=`IBKR: searching ${ticker}…`;
+    const searchRes=await ibkrPost('/v1/api/iserver/secdef/search',{symbol:ticker,secType:'STK',name:false});
+    if(!searchRes?.length) throw new Error(`No results for "${ticker}" — check ticker symbol`);
+    const stock=searchRes[0];
+    const conid=stock.conid;
+    state.ibkrStockConid=conid;
+
+    // Months come from sections as "APR25;MAY25;JUN25;…"
+    const optSection=(stock.sections||[]).find(s=>s.secType==='OPT');
+    const months=(optSection?.months||'').split(';').filter(Boolean).slice(0,4);
+    if(!months.length) throw new Error(`No options listed for "${ticker}"`);
+
+    // 3. Spot price (two-pass snapshot: subscribe → wait → read)
+    status.textContent='IBKR: fetching spot…';
+    await ibkrFetch(`/v1/api/iserver/marketdata/snapshot?conids=${conid}&fields=31,84,86`);
+    await new Promise(r=>setTimeout(r,400));
+    const spotMd=await ibkrJson(`/v1/api/iserver/marketdata/snapshot?conids=${conid}&fields=31,84,86`);
+    const se=spotMd?.[0]||{};
+    const spotRaw=parseFloat(se['31']||se['84']||se['86']||0);
+    if(spotRaw>0) syncSpot(Math.round(spotRaw*100)/100);
+    const S=state.spot||spotRaw||100;
+
+    // 4. Get strike lists for each month (parallel)
+    status.textContent=`IBKR: fetching strikes (${months.length} expiries)…`;
+    const MON_PCT=0.20; // ±20% moneyness filter
+    const strikesByMonth=await Promise.all(months.map(async month=>{
+      const d=await ibkrJson(`/v1/api/iserver/secdef/strikes?conid=${conid}&sectype=OPT&month=${month}&exchange=SMART`);
+      if(!d) return {month,calls:[],puts:[]};
+      const filt=arr=>(arr||[]).filter(k=>Math.abs(k-S)/S<=MON_PCT);
+      return {month,calls:filt(d.call),puts:filt(d.put)};
+    }));
+
+    // 5. Resolve option conids for each strike × right (batched parallel)
+    status.textContent='IBKR: resolving contracts…';
+    const infoJobs=[];
+    for(const {month,calls,puts} of strikesByMonth){
+      for(const k of calls) infoJobs.push({month,strike:k,right:'C'});
+      for(const k of puts)  infoJobs.push({month,strike:k,right:'P'});
+    }
+    const IBATCH=20; // parallel info requests per batch
+    const optConids=[]; // [{conid,K,type,exp}]
+    for(let i=0;i<infoJobs.length;i+=IBATCH){
+      const slice=infoJobs.slice(i,i+IBATCH);
+      const results=await Promise.all(slice.map(async({month,strike,right})=>{
+        const d=await ibkrJson(`/v1/api/iserver/secdef/info?conid=${conid}&sectype=OPT&month=${month}&exchange=SMART&strike=${strike}&right=${right}`);
+        const opt=d?.[0];
+        if(!opt?.conid) return null;
+        const md=opt.maturityDate||''; // "YYYYMMDD"
+        const exp=md.length===8?`${md.slice(0,4)}-${md.slice(4,6)}-${md.slice(6,8)}`:null;
+        return {conid:opt.conid,K:+strike,type:right==='C'?'call':'put',exp};
+      }));
+      for(const r of results) if(r) optConids.push(r);
+    }
+    if(!optConids.length) throw new Error('No option contracts found — ensure options data is included in your IBKR data subscription');
+
+    // 6. Market data for all option conids (subscribe → wait → read, batch 50)
+    status.textContent=`IBKR: fetching prices for ${optConids.length} options…`;
+    const MBATCH=50;
+    const mdMap={};
+    // Subscribe pass
+    for(let i=0;i<optConids.length;i+=MBATCH){
+      const ids=optConids.slice(i,i+MBATCH).map(o=>o.conid).join(',');
+      await ibkrFetch(`/v1/api/iserver/marketdata/snapshot?conids=${ids}&fields=31,84,86,7633`);
+    }
+    await new Promise(r=>setTimeout(r,600));
+    // Read pass
+    for(let i=0;i<optConids.length;i+=MBATCH){
+      const batch=optConids.slice(i,i+MBATCH);
+      const ids=batch.map(o=>o.conid).join(',');
+      const md=await ibkrJson(`/v1/api/iserver/marketdata/snapshot?conids=${ids}&fields=31,84,86,7633`);
+      for(const entry of (md||[])){
+        mdMap[entry.conid]={
+          bid:parseFloat(entry['84']||0)||0,
+          ask:parseFloat(entry['86']||0)||0,
+          iv:parseFloat(entry['7633']||0)/100, // IBKR returns IV as %, convert to decimal
+        };
+      }
+    }
+
+    // 7. Build state.liveOptions
+    state.liveOptions=[];
+    const nowMs=Date.now();
+    for(const opt of optConids){
+      const md=mdMap[opt.conid];
+      if(!md) continue;
+      const {bid,ask}=md;
+      if(bid<=0&&ask<=0) continue;
+      const mid=(bid+ask)/2;
+      if(mid<=0.001) continue;
+      // Use IBKR's IV field if available; otherwise back-solve from mid
+      let iv=md.iv>0.01?md.iv:0;
+      if(!iv&&opt.exp){
+        const T=(new Date(opt.exp).getTime()-nowMs)/(365.25*24*3600*1000);
+        if(T>0.001){
+          const calc=bsIV(mid,S,opt.K,T,state.rate,opt.type);
+          if(calc>0.01) iv=calc;
+        }
+      }
+      if(!iv) continue;
+      state.liveOptions.push({K:opt.K,iv,type:opt.type,exp:opt.exp,bid,ask});
+    }
+    if(!state.liveOptions.length) throw new Error('No valid bid/ask prices received — market may be closed, or options data subscription required');
+
+    // 8. Fit smile + update UI
+    fitSmileAndFinish(S,status,btn,'','IBKR');
+
+  }catch(e){
+    status.textContent=`IBKR: ${e.message}`;
+    status.style.color='var(--red)';
+    console.error('IBKR fetch error:',e);
+    btn.disabled=false; btn.textContent='⟳ Fetch';
+  }
+}
+
+// IBKR comparison-tab fetch — same gateway flow but for an arbitrary ticker
+async function _cmpFetchIbkr(ticker,statusEl){
+  if(!state.ibkrConnected){
+    if(statusEl) statusEl.textContent='IBKR: not connected — use Connect button first';
+    return null;
+  }
+  const auth=await ibkrJson('/v1/api/iserver/auth/status');
+  if(!auth?.authenticated){
+    if(statusEl) statusEl.textContent='IBKR: session expired — reconnect first';
+    state.ibkrConnected=false;
+    return null;
+  }
+  if(statusEl) statusEl.textContent=`IBKR: searching ${ticker}…`;
+  const searchRes=await ibkrPost('/v1/api/iserver/secdef/search',{symbol:ticker,secType:'STK',name:false});
+  if(!searchRes?.length){ if(statusEl) statusEl.textContent=`IBKR: no results for ${ticker}`; return null; }
+  const stock=searchRes[0];
+  const conid=stock.conid;
+  const optSection=(stock.sections||[]).find(s=>s.secType==='OPT');
+  const months=(optSection?.months||'').split(';').filter(Boolean).slice(0,3);
+  if(!months.length){ if(statusEl) statusEl.textContent=`IBKR: no options for ${ticker}`; return null; }
+
+  // Spot (two-pass)
+  await ibkrFetch(`/v1/api/iserver/marketdata/snapshot?conids=${conid}&fields=31,84,86`);
+  await new Promise(r=>setTimeout(r,400));
+  const spotMd=await ibkrJson(`/v1/api/iserver/marketdata/snapshot?conids=${conid}&fields=31,84,86`);
+  const se=spotMd?.[0]||{};
+  const spot=parseFloat(se['31']||se['84']||se['86']||0);
+  if(!spot){ if(statusEl) statusEl.textContent=`IBKR: no spot for ${ticker}`; return null; }
+  const S=spot;
+
+  // Strikes
+  if(statusEl) statusEl.textContent=`IBKR: fetching ${ticker} chain…`;
+  const MON_PCT=0.20;
+  const strikesByMonth=await Promise.all(months.map(async month=>{
+    const d=await ibkrJson(`/v1/api/iserver/secdef/strikes?conid=${conid}&sectype=OPT&month=${month}&exchange=SMART`);
+    if(!d) return {month,calls:[],puts:[]};
+    const filt=arr=>(arr||[]).filter(k=>Math.abs(k-S)/S<=MON_PCT);
+    return {month,calls:filt(d.call),puts:filt(d.put)};
+  }));
+
+  const infoJobs=[];
+  for(const {month,calls,puts} of strikesByMonth){
+    for(const k of calls) infoJobs.push({month,strike:k,right:'C'});
+    for(const k of puts)  infoJobs.push({month,strike:k,right:'P'});
+  }
+  const IBATCH=20;
+  const optConids=[];
+  for(let i=0;i<infoJobs.length;i+=IBATCH){
+    const slice=infoJobs.slice(i,i+IBATCH);
+    const results=await Promise.all(slice.map(async({month,strike,right})=>{
+      const d=await ibkrJson(`/v1/api/iserver/secdef/info?conid=${conid}&sectype=OPT&month=${month}&exchange=SMART&strike=${strike}&right=${right}`);
+      const opt=d?.[0];
+      if(!opt?.conid) return null;
+      const md=opt.maturityDate||'';
+      const exp=md.length===8?`${md.slice(0,4)}-${md.slice(4,6)}-${md.slice(6,8)}`:null;
+      return {conid:opt.conid,K:+strike,type:right==='C'?'call':'put',exp};
+    }));
+    for(const r of results) if(r) optConids.push(r);
+  }
+  if(!optConids.length){ if(statusEl) statusEl.textContent=`IBKR: no option contracts for ${ticker}`; return null; }
+
+  const MBATCH=50;
+  const mdMap={};
+  for(let i=0;i<optConids.length;i+=MBATCH){
+    const ids=optConids.slice(i,i+MBATCH).map(o=>o.conid).join(',');
+    await ibkrFetch(`/v1/api/iserver/marketdata/snapshot?conids=${ids}&fields=31,84,86,7633`);
+  }
+  await new Promise(r=>setTimeout(r,600));
+  for(let i=0;i<optConids.length;i+=MBATCH){
+    const ids=optConids.slice(i,i+MBATCH).map(o=>o.conid).join(',');
+    const md=await ibkrJson(`/v1/api/iserver/marketdata/snapshot?conids=${ids}&fields=31,84,86,7633`);
+    for(const entry of (md||[])){
+      mdMap[entry.conid]={
+        bid:parseFloat(entry['84']||0)||0,
+        ask:parseFloat(entry['86']||0)||0,
+        iv:parseFloat(entry['7633']||0)/100,
+      };
+    }
+  }
+
+  const nowMs=Date.now();
+  const liveOptions=[];
+  for(const opt of optConids){
+    const md=mdMap[opt.conid];
+    if(!md) continue;
+    const {bid,ask}=md;
+    if(bid<=0&&ask<=0) continue;
+    const mid=(bid+ask)/2;
+    if(mid<=0.001) continue;
+    let iv=md.iv>0.01?md.iv:0;
+    if(!iv&&opt.exp){
+      const T=(new Date(opt.exp).getTime()-nowMs)/(365.25*24*3600*1000);
+      if(T>0.001){
+        const calc=bsIV(mid,S,opt.K,T,state.rate,opt.type);
+        if(calc>0.01) iv=calc;
+      }
+    }
+    if(!iv) continue;
+    liveOptions.push({K:opt.K,iv,type:opt.type,exp:opt.exp,bid,ask});
+  }
+  if(!liveOptions.length){ if(statusEl) statusEl.textContent=`IBKR: no priced options for ${ticker} (market closed?)`; return null; }
+  return {spot:Math.round(S*100)/100, liveOptions};
+}
+
 // ── Handles redirect-back from Saxo (mobile / popup-blocked fallback) ──
 async function handleSaxoRedirectCallback(code,pkce){
   // Clean up ?code=... from address bar without reload
@@ -2397,9 +2749,7 @@ async function fetchLiveData(){
     return;
   }
   if(state.liveSource==='ibkr'){
-    const status=document.getElementById('liveStatus');
-    if(status){ status.textContent='IBKR integration not yet available'; status.style.color='var(--ylw)'; }
-    btn.disabled=false; btn.textContent='⟳ Fetch';
+    await fetchIbkrData(btn,status);
     return;
   }
   try{
@@ -2490,7 +2840,7 @@ function exportOptionsData(){
     };
   }
   const payload={
-    ticker:state.ticker||'MSTR',
+    ticker:state.ticker||'Ticker',
     asOf:new Date().toISOString().slice(0,16).replace('T',' ')+' UTC',
     source:state.liveSource,
     spot:+state.spot.toFixed(2),
@@ -2516,7 +2866,7 @@ function exportOptionsData(){
   navigator.clipboard?.writeText(header+json).catch(()=>{});
 }
 
-function fitSmileAndFinish(spot,status,btn,note=''){
+function fitSmileAndFinish(spot,status,btn,note='',source=''){
   // Set ATM IV from live options — prefer ATM calls, fall back to all options
   const validOpts=state.liveOptions.filter(o=>o.iv>0.05&&o.iv<5);
   const calls=validOpts.filter(o=>o.type==='call');
@@ -2535,7 +2885,8 @@ function fitSmileAndFinish(spot,status,btn,note=''){
     if(smileP) _smileFitted=true;
   }
   const ivStr=_atmIV>0?` · ATM IV ${(_atmIV*100).toFixed(0)}%`:'';
-  status.textContent=`Saxo: $${spot.toFixed(2)}${ivStr} · ${state.liveOptions.length} opts${note}${_smileFitted?' · smile fitted':''} · ⟳ auto`;
+  const _srcLabel=source||'Saxo';
+  status.textContent=`${_srcLabel}: $${spot.toFixed(2)}${ivStr} · ${state.liveOptions.length} opts${note}${_smileFitted?' · smile fitted':''} · ⟳ auto`;
   status.style.color='var(--grn)';
   btn.textContent='⟳ Refresh';btn.disabled=false;
   if(state.liveOptions.length>0) setLiveLock(true);
@@ -2577,7 +2928,7 @@ async function fetchSaxoData(btn,status){
     return fetch(BASE+path,{headers:H});
   };
 
-  const ticker=state.ticker||'MSTR';
+  const ticker=state.ticker||'Ticker';
 
   try{
     // ── Step 1: find stock instrument Uic ──
@@ -2874,7 +3225,11 @@ function scenarioIV(l,S){
     }
     return smileIV(l.K,S,baseIV);
   }
-  return baseIV; // flat mode — just the per-expiry ATM IV
+  // Flat mode: use real chain IV per strike as the base when live data is available.
+  // NO rho adjustment here — this is the flat-IV baseline (vol stays fixed as spot moves).
+  // The rho effect is applied separately in volAdjIV(), which is used only for the band.
+  const chainIV=liveChainIV(l.K,l.exp,l.type);
+  return chainIV??baseIV;
 }
 
 function renderSmileChart(){
@@ -3257,26 +3612,41 @@ function buildDatasets(sp){
     {k:'t60',  label:'+60d',     color:'#f0883e',dash:[4,3],w:1.5},
     {k:'t90',  label:'+90d',     color:'#bc8cff',dash:[4,3],w:1.5},
   ];
+
+  // Per-leg: chain IV (real market IV) and market anchor offset.
+  // mktOffset = liveChainMid − bsPrice(chainIV) at current spot/T.
+  // Adding mktOffset to every BS price ensures the chart value at current spot
+  // exactly matches the leg table (which uses liveChainMid directly).
+  const legMeta=state.legs.map(l=>{
+    const T=getT(l.exp);
+    const chainIV=liveChainIV(l.K,l.exp,l.type)??scenarioIV(l,state.spot);
+    const bsSpot=T>0?bsPrice(state.spot,l.K,T,state.rate,chainIV,l.type)
+                     :Math.max(0,l.type==='call'?state.spot-l.K:l.K-state.spot);
+    const liveMid=liveChainMid(l.K,l.exp,l.type);
+    return{chainIV, mktOffset:liveMid!==null?liveMid-bsSpot:0};
+  });
+
   const ds=cfgs.filter(c=>state.lines[c.k]).map(c=>({
     label:c.label,
     data:sp.map(S=>{
       let p=0;
-      for(const l of state.legs){
+      for(let i=0;i<state.legs.length;i++){
+        const l=state.legs[i];
+        const {chainIV,mktOffset}=legMeta[i];
         const sign=l.action==='buy'?1:-1;
         const Tnow=getT(l.exp);
-        const ep=entryPx(l); // always = leg.prem (fixed at creation), no state.spot dep.
+        const ep=entryPx(l);
         if(c.k==='expiry'){
-          // At expiry: intrinsic payoff minus fixed entry price. IV-independent.
+          // At expiry: intrinsic payoff. IV-independent, no market offset needed.
           const intr=Math.max(0,l.type==='call'?S-l.K:l.K-S);
           p+=sign*(intr-ep)*l.qty*100;
         } else {
-          // Time-based: current BS value at scenario spot S minus fixed entry price.
-          // refPx = ep (fixed) ensures the chart is immune to state.spot sliding past strike.
-          // scenarioIV = current state.iv (± smile at S) so IV slider moves the chart.
+          // Baseline: flat IV (no rho), anchored to live market mid at current spot.
+          // scenarioIV returns per-strike chain IV (flat, no rho) for the baseline curve.
           const ivFut=scenarioIV(l,S);
           const elap=c.k==='t0'?0:parseInt(c.k.slice(1));
           const Tfut=Math.max(0,Tnow-elap/365);
-          const cp=bsPrice(S,l.K,Tfut,state.rate,ivFut,l.type);
+          const cp=bsPrice(S,l.K,Tfut,state.rate,ivFut,l.type)+mktOffset;
           p+=sign*(cp-ep)*l.qty*100;
         }
       }
@@ -3287,15 +3657,15 @@ function buildDatasets(sp){
   }));
 
   // ── Spot-vol correlation band ──
-  // One shaded band per visible timed line, in the line's own colour.
-  // Upper boundary = vol-corr P&L where it exceeds base (down-moves: IV spike helps)
-  // Lower boundary = vol-corr P&L where it is below base (up-moves: vol crush hurts)
-  // The band is drawn BEFORE the main lines so lines sit on top of the fill.
+  // Solid line = base P&L (flat IV). Dashed line = vol-corr P&L (corrData).
+  // Band fills the region between them in both directions:
+  //   corrData > baseData → fill ABOVE solid line (vol helps)
+  //   corrData < baseData → fill BELOW solid line (vol hurts)
+  // Works correctly for both ρ>0 (vol crush on rally) and ρ<0 (vol spike on rally).
   const rho=state.spotVolRho||0;
   const hasTimedLines=cfgs.some(c=>c.k!=='expiry'&&state.lines[c.k]);
-  if(rho>0.01&&hasTimedLines&&state.legs.length>0){
+  if(Math.abs(rho)>0.01&&hasTimedLines&&state.legs.length>0){
     const timedCfgs=cfgs.filter(c=>c.k!=='expiry'&&state.lines[c.k]);
-    // Helper to parse hex color into rgba with alpha
     const hexRgba=(hex,a)=>{
       const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
       return`rgba(${r},${g},${b},${a})`;
@@ -3304,38 +3674,43 @@ function buildDatasets(sp){
     for(const c of timedCfgs){
       const corrData=sp.map(S=>{
         let p=0;
-        for(const l of state.legs){
+        for(let i=0;i<state.legs.length;i++){
+          const l=state.legs[i];
+          const {chainIV,mktOffset}=legMeta[i];
           const sign=l.action==='buy'?1:-1;
           const Tnow=getT(l.exp);
           const ep=entryPx(l);
-          const adjBase=volAdjIV(S,state.iv);
-          const adjIV=state.ivSurface==='smile'?smileIV(l.K,S,adjBase):adjBase;
+          // Vol-corr band: apply rho adjustment to per-leg chain IV (not state.iv).
+          // At S=state.spot: rho factor=1 → adjIV=chainIV → corrData=baseData (band=0). ✓
+          const adjIV=state.ivSurface==='smile'
+            ?smileIV(l.K,S,volAdjIV(S,state.iv))
+            :chainIV*Math.pow(state.spot/S,rho);
           const elap=c.k==='t0'?0:parseInt(c.k.slice(1));
           const Tfut=Math.max(0,Tnow-elap/365);
-          const cp=bsPrice(S,l.K,Tfut,state.rate,adjIV,l.type);
+          const cp=bsPrice(S,l.K,Tfut,state.rate,adjIV,l.type)+mktOffset;
           p+=sign*(cp-ep)*l.qty*100;
         }
         return p;
       });
       const baseData=ds.find(d=>d.label===c.label)?.data||corrData;
-      const upper=sp.map((_,i)=>Math.max(baseData[i],corrData[i]));
-      const lower=sp.map((_,i)=>Math.min(baseData[i],corrData[i]));
       const fillCol=hexRgba(c.color,0.18);
       const edgeCol=hexRgba(c.color,0.55);
-      // lowerIdx will be bandDatasets.length after splice inserts at front of ds
-      const lowerIdx=bandDatasets.length; // position within bandDatasets = final position in ds
+      // Hidden reference = baseData (same level as the solid main line).
+      // Visible dashed line = corrData (always distinct from solid line).
+      // fill above/below relative to baseData handles both ρ>0 and ρ<0 correctly.
+      const refIdx=bandDatasets.length;
       bandDatasets.push({
         label:`_band_lower_${c.k}`,
-        data:lower,
+        data:baseData,
         borderColor:'transparent',backgroundColor:'transparent',
         borderWidth:0,pointRadius:0,tension:0.1,fill:false,_isBand:true,
       });
       bandDatasets.push({
         label:`Vol-corr band · ${c.label} (ρ=${rho.toFixed(2)})`,
-        data:upper,
+        data:corrData,
         borderColor:edgeCol,backgroundColor:fillCol,
         borderWidth:1,borderDash:[3,3],pointRadius:0,tension:0.1,
-        fill:{target:lowerIdx,above:fillCol,below:fillCol},
+        fill:{target:refIdx,above:fillCol,below:fillCol},
         _isBand:true,
       });
     }
@@ -3365,44 +3740,47 @@ function buildDatasets(sp){
     const col=CUSTOM_COLORS[i%CUSTOM_COLORS.length];
     const baseData=sp.map(S=>{
       let p=0;
-      for(const l of state.legs){
+      for(let j=0;j<state.legs.length;j++){
+        const l=state.legs[j];
+        const {mktOffset}=legMeta[j];
         const sign=l.action==='buy'?1:-1;
         const ep=entryPx(l);
         const ivFut=scenarioIV(l,S);
         const Tnow=getT(l.exp);
         const Tfut=Math.max(0,Tnow-days/365);
-        const cp=bsPrice(S,l.K,Tfut,state.rate,ivFut,l.type);
+        const cp=bsPrice(S,l.K,Tfut,state.rate,ivFut,l.type)+mktOffset;
         p+=sign*(cp-ep)*l.qty*100;
       }
       return p;
     });
     // Vol-corr band for this custom line
-    if(rho>0.01){
+    if(Math.abs(rho)>0.01){
       const corrData=sp.map(S=>{
         let p=0;
-        for(const l of state.legs){
+        for(let j=0;j<state.legs.length;j++){
+          const l=state.legs[j];
+          const {chainIV,mktOffset}=legMeta[j];
           const sign=l.action==='buy'?1:-1;
           const ep=entryPx(l);
-          const adjBase=volAdjIV(S,state.iv);
-          const adjIV=state.ivSurface==='smile'?smileIV(l.K,S,adjBase):adjBase;
+          const adjIV=state.ivSurface==='smile'
+            ?smileIV(l.K,S,volAdjIV(S,state.iv))
+            :chainIV*Math.pow(state.spot/S,rho);
           const Tnow=getT(l.exp);
           const Tfut=Math.max(0,Tnow-days/365);
-          const cp=bsPrice(S,l.K,Tfut,state.rate,adjIV,l.type);
+          const cp=bsPrice(S,l.K,Tfut,state.rate,adjIV,l.type)+mktOffset;
           p+=sign*(cp-ep)*l.qty*100;
         }
         return p;
       });
-      const upper=sp.map((_,j)=>Math.max(baseData[j],corrData[j]));
-      const lower=sp.map((_,j)=>Math.min(baseData[j],corrData[j]));
       const r2=parseInt(col.slice(1,3),16),g2=parseInt(col.slice(3,5),16),b2=parseInt(col.slice(5,7),16);
       const fillCol=`rgba(${r2},${g2},${b2},0.18)`;
       const edgeCol=`rgba(${r2},${g2},${b2},0.55)`;
-      const lowerIdx=ds.length;
-      ds.push({label:`_band_lower_custom${i}`,data:lower,borderColor:'transparent',
+      const refIdx=ds.length;
+      ds.push({label:`_band_lower_custom${i}`,data:baseData,borderColor:'transparent',
         backgroundColor:'transparent',borderWidth:0,pointRadius:0,tension:0.1,fill:false,_isBand:true});
-      ds.push({label:`Vol-corr band · +${days}d (ρ=${rho.toFixed(2)})`,data:upper,
+      ds.push({label:`Vol-corr band · +${days}d (ρ=${rho.toFixed(2)})`,data:corrData,
         borderColor:edgeCol,backgroundColor:fillCol,borderWidth:1,borderDash:[3,3],
-        pointRadius:0,tension:0.1,fill:{target:lowerIdx,above:fillCol,below:fillCol},_isBand:true});
+        pointRadius:0,tension:0.1,fill:{target:refIdx,above:fillCol,below:fillCol},_isBand:true});
     }
     ds.push({
       label:`+${days}d`,
@@ -3582,15 +3960,24 @@ function renderHeatmap(){
   const lo=Math.max(1,_hmLo);
   const hi=Math.max(lo+1,_hmHi);
   const maxDays=Math.max(30,...state.legs.map(l=>getT(l.exp)*365));
-  const hasVolCorr=state.hmVolCorr&&(state.spotVolRho||0)>0.01;
+  const hasVolCorr=state.hmVolCorr&&Math.abs(state.spotVolRho||0)>0.01;
 
   // ── Pre-hoist per-leg constants (avoids recomputing inside the hot loop) ──
-  const legK=state.legs.map(l=>({
-    sign:l.action==='buy'?1:-1,
-    ep:entryPx(l),
-    Tnow_days:getT(l.exp)*365,
-    K:l.K,type:l.type,qty:l.qty,
-  }));
+  const legK=state.legs.map(l=>{
+    const T=getT(l.exp);
+    const chainIV=liveChainIV(l.K,l.exp,l.type)??scenarioIV(l,state.spot);
+    const bsSpot=T>0?bsPrice(state.spot,l.K,T,state.rate,chainIV,l.type)
+                    :Math.max(0,l.type==='call'?state.spot-l.K:l.K-state.spot);
+    const liveMid=liveChainMid(l.K,l.exp,l.type);
+    const mktOffset=liveMid!==null?liveMid-bsSpot:0;
+    return{
+      sign:l.action==='buy'?1:-1,
+      ep:entryPx(l),
+      Tnow_days:T*365,
+      K:l.K,type:l.type,qty:l.qty,
+      chainIV,mktOffset,
+    };
+  });
 
   // ── Single-pass grid computation (base + corr in one loop) ──
   const CELLS=COLS*ROWS;
@@ -3602,24 +3989,25 @@ function renderHeatmap(){
     const days=maxDays*(1-r/(ROWS-1));
     for(let c=0;c<COLS;c++){
       const spot=lo+(hi-lo)*c/(COLS-1);
-      // baseArr always = constant-IV P&L (drives heatmap colors)
+      // baseArr = flat-IV P&L anchored to live market mid at current spot
       let pnl=0;
       for(const l of legK){
         const rem=Math.max(0,l.Tnow_days-(maxDays-days))/365;
-        const iv=state.ivSurface==='smile'?smileIV(l.K,spot,state.iv):state.iv;
-        pnl+=l.sign*(bsPrice(spot,l.K,rem,state.rate,iv,l.type)-l.ep)*l.qty*100;
+        const iv=state.ivSurface==='smile'?smileIV(l.K,spot,l.chainIV):l.chainIV;
+        pnl+=l.sign*(bsPrice(spot,l.K,rem,state.rate,iv,l.type)+l.mktOffset-l.ep)*l.qty*100;
       }
       const idx=r*COLS+c;
       baseArr[idx]=pnl;
       if(pnl<minP)minP=pnl;if(pnl>maxP)maxP=pnl;
-      // corrArr = vol-adjusted P&L (overlay shows diff vs constant-IV)
+      // corrArr = vol-adjusted P&L (rho applied to per-leg chain IV)
       if(corrArr){
         let cpnl=0;
         for(const l of legK){
           const rem=Math.max(0,l.Tnow_days-(maxDays-days))/365;
-          const ab=volAdjIV(spot,state.iv);
-          const iv=state.ivSurface==='smile'?smileIV(l.K,spot,ab):ab;
-          cpnl+=l.sign*(bsPrice(spot,l.K,rem,state.rate,iv,l.type)-l.ep)*l.qty*100;
+          const adjIV=state.ivSurface==='smile'
+            ?smileIV(l.K,spot,volAdjIV(spot,state.iv))
+            :l.chainIV*Math.pow(state.spot/spot,rho);
+          cpnl+=l.sign*(bsPrice(spot,l.K,rem,state.rate,adjIV,l.type)+l.mktOffset-l.ep)*l.qty*100;
         }
         corrArr[idx]=cpnl;
       }
@@ -3850,7 +4238,8 @@ function renderLegs(){
     const cp=liveChainMid(l.K,l.exp,l.type)??bsPrice(state.spot,l.K,T,state.rate,state.iv,l.type);
     const sign=l.action==='buy'?1:-1;
     const pnl=sign*(cp-ep)*l.qty*100;
-    const gr=T>0?bsAll(state.spot,l.K,T,state.rate,state.iv,l.type):{theta:0,d2:0};
+    const legIV=liveChainIV(l.K,l.exp,l.type)??state.iv;
+    const gr=T>0?bsAll(state.spot,l.K,T,state.rate,legIV,l.type):{theta:0,d2:0};
     const tht=gr.theta*sign*l.qty*100;
     const cap=capitalRequired(l);
     const po=probOTM(l);
@@ -4002,6 +4391,20 @@ function liveChainMid(K,exp,type){
   if(o.mid!=null&&o.mid>0) return o.mid;
   if(o.bid!=null&&o.ask!=null&&(o.bid+o.ask)>0) return (o.bid+o.ask)/2;
   return null;
+}
+// Back-solve IV from the real chain mid price for a given leg.
+// Returns null if no live data or if back-solve fails.
+function liveChainIV(K,exp,type){
+  const mid=liveChainMid(K,exp,type);
+  if(mid===null) return null;
+  const T=getT(exp);
+  if(T<=0) return null;
+  // Check direct iv field first (already provided by Yahoo/Saxo parsers)
+  const opts=state.liveOptions.filter(o=>o.exp===exp&&o.type===type&&o.K===K);
+  if(opts.length&&opts[0].iv>0) return opts[0].iv;
+  // Fall back to bisection back-solve
+  const iv=bsIV(mid,state.spot,K,T,state.rate,type);
+  return iv>0?iv:null;
 }
 function fAutoPrice(){
   const exp=document.getElementById('fExpiry').value;
@@ -4318,8 +4721,67 @@ let _greeksFilter='all'; // 'all' | 'call' | 'put'
 let _greeksVsExp='strike'; // 'strike' | 'expiry'
 let _rollStrikes=[];       // selected strikes for vs-Expiry mode
 let _gPriceChart=null;     // Chart.js instance for option price chart
+let _gSimSpotActive=false; // whether scenario spot overlay is shown
+let _gSimSpot=null;        // scenario spot value (null = use state.spot)
 
 const _ROLL_COLORS=['#58a6ff','#3fb950','#f78166','#d2a8ff','#ffa657','#79c0ff','#56d364','#ff7b72','#e3b341','#f0883e'];
+
+// ── Scenario spot simulation (vs-Strike mode) ──
+function toggleGreeksSimSpot(){
+  _gSimSpotActive=!_gSimSpotActive;
+  const btn=document.getElementById('gSimSpotBtn');
+  const row=document.getElementById('gSimSpotRow');
+  if(btn){
+    btn.textContent=_gSimSpotActive?'× Scenario spot':'+ Scenario spot';
+    btn.style.background=_gSimSpotActive?'var(--ylw)':'var(--sur2)';
+    btn.style.color=_gSimSpotActive?'#000':'var(--mut)';
+    btn.style.borderColor=_gSimSpotActive?'var(--ylw)':'var(--bdr)';
+  }
+  if(row) row.style.display=_gSimSpotActive?'flex':'none';
+  if(_gSimSpotActive){
+    // Initialise slider to current spot on first open
+    if(_gSimSpot===null) _gSimSpot=state.spot;
+    _syncSimSpotSlider(_gSimSpot);
+  } else {
+    _gSimSpot=null;
+    const pi=document.getElementById('gScenPriceInfo'); if(pi) pi.style.display='none';
+    const st=document.getElementById('gScenTable');     if(st) st.style.display='none';
+  }
+  renderGreeksDashboard();
+}
+function resetGreeksSimSpot(){
+  _gSimSpot=state.spot;
+  _syncSimSpotSlider(_gSimSpot);
+  renderGreeksDashboard();
+}
+function onGreeksSimSpotSlider(v){
+  _gSimSpot=v;
+  _syncSimSpotSlider(v);
+  renderGreeksDashboard();
+}
+function _syncSimSpotSlider(v){
+  const sl=document.getElementById('gSimSpotSlider');
+  const lbl=document.getElementById('gSimSpotVal');
+  const ivLbl=document.getElementById('gSimSpotIV');
+  if(!sl) return;
+  // Slider range: 20%–180% of state.spot, snapped to $1 steps
+  const lo=Math.max(1,Math.round(state.spot*0.2));
+  const hi=Math.round(state.spot*1.8);
+  sl.min=lo; sl.max=hi; sl.step=Math.max(1,Math.round(state.spot*0.005));
+  sl.value=Math.min(hi,Math.max(lo,v));
+  if(lbl) lbl.textContent='$'+Number(v).toFixed(0);
+  // Show adjusted IV via rho
+  if(ivLbl&&state.spot>0){
+    const rho=state.spotVolRho||0;
+    const adjIV=state.iv*Math.pow(state.spot/v,rho);
+    const ivPct=(adjIV*100).toFixed(1);
+    const dS=((v-state.spot)/state.spot*100).toFixed(1);
+    const sign=v>=state.spot?'+':'';
+    ivLbl.textContent=`(${sign}${dS}%, IV→${ivPct}%)`;
+    // Color: green if IV increased vs current, red if decreased
+    ivLbl.style.color=adjIV>state.iv?'#3fb950':'#f85149';
+  }
+}
 
 function setGreeksView(v){
   _greeksVsExp=v;
@@ -4339,6 +4801,10 @@ function setGreeksView(v){
     const pr=document.getElementById('gPriceRow');   if(pr) pr.style.display='none';
     const rr=document.getElementById('gRatioRow');   if(rr) rr.style.display='none';
     const rt=document.getElementById('gRollTable');  if(rt) rt.style.display='none';
+  } else {
+    // Switching to vs-Expiry: hide vs-Strike scenario elements
+    const pi=document.getElementById('gScenPriceInfo'); if(pi) pi.style.display='none';
+    const st=document.getElementById('gScenTable');     if(st) st.style.display='none';
   }
   renderGreeksDashboard();
 }
@@ -4682,7 +5148,12 @@ function renderGreeksDashboard(){
 
   if(useLive||useSim){
     // ── LIVE or SIM mode: strike on x-axis, one point per option ──
-    if(srcLbl) srcLbl.textContent=useSim?'Simulated · BS model · x = strike':'Per-share · x = strike · computed at current spot';
+    const scenSpot=_gSimSpotActive&&_gSimSpot!==null?_gSimSpot:null;
+    const rho=state.spotVolRho||0;
+    if(srcLbl) srcLbl.textContent=useSim
+      ?'Simulated · BS model · x = strike'
+      :(scenSpot!==null?`Per-share · x = strike · current spot $${spot.toFixed(2)} vs scenario $${scenSpot.toFixed(0)}`
+                       :'Per-share · x = strike · computed at current spot');
 
     const lo=Math.max(1,_gLo||Math.round(spot*0.5));
     const hi=Math.max(lo+1,_gHi||Math.round(spot*1.5));
@@ -4690,15 +5161,31 @@ function renderGreeksDashboard(){
     const T=getT(selExp);
     if(T<=0){ if(srcLbl) srcLbl.textContent='Expired'; return; }
 
+    // Helper: get IV for a given (K, exp, type) at evaluation spot evalS
+    // For live data: use chain IV (real), then adjust for spot move via rho.
+    // For sim data: use model smile at evalS.
+    function getIVat(o, evalS){
+      if(useLive){
+        // Use real chain IV as anchor; scale by spot-vol rho when evalS ≠ spot
+        const chainIV=liveChainIV(o.K,o.exp,o.type)??o.iv;
+        if(!chainIV) return state.iv;
+        if(evalS===spot) return chainIV;
+        return chainIV*Math.pow(spot/evalS,rho);
+      }
+      // Sim mode: smile evaluated at evalS
+      return state.ivSurface==='smile'?smileIV(o.K,evalS,atmIV(T)):atmIV(T);
+    }
+
     // Build option list — live market data OR synthetic BS grid in sim mode
     let optSource=state.liveOptions;
     if(useSim){
+      const evalS=scenSpot??spot;
       const strikes=simStrikeGrid(spot).filter(K=>K>=lo&&K<=hi);
       optSource=[];
       for(const K of strikes){
-        const iv=state.ivSurface==='smile'?smileIV(K,spot,atmIV(T)):atmIV(T);
+        const iv=getIVat({K,exp:selExp,type:'call'},evalS);
         optSource.push({K,iv,type:'call',exp:selExp});
-        optSource.push({K,iv,type:'put', exp:selExp});
+        optSource.push({K,iv:getIVat({K,exp:selExp,type:'put'},evalS),type:'put',exp:selExp});
       }
     }
 
@@ -4709,21 +5196,67 @@ function renderGreeksDashboard(){
       .filter(o=>o.exp===selExp&&o.type==='put'&&o.K>=lo&&o.K<=hi&&(_greeksFilter==='all'||_greeksFilter==='put'))
       .sort((a,b)=>a.K-b.K);
 
-    function greekPoints(opts){
+    // Compute Greeks for a given evaluation spot (current or scenario)
+    function greekPoints(opts, evalS){
       return {
         labels: opts.map(o=>'$'+o.K),
-        delta:  opts.map(o=>bsAll(spot,o.K,T,state.rate,o.iv,o.type).delta),
-        gamma:  opts.map(o=>bsAll(spot,o.K,T,state.rate,o.iv,o.type).gamma),
-        theta:  opts.map(o=>bsAll(spot,o.K,T,state.rate,o.iv,o.type).theta),
-        vega:   opts.map(o=>bsAll(spot,o.K,T,state.rate,o.iv,o.type).vega),
+        delta:  opts.map(o=>bsAll(evalS,o.K,T,state.rate,getIVat(o,evalS),o.type).delta),
+        gamma:  opts.map(o=>bsAll(evalS,o.K,T,state.rate,getIVat(o,evalS),o.type).gamma),
+        theta:  opts.map(o=>bsAll(evalS,o.K,T,state.rate,getIVat(o,evalS),o.type).theta),
+        vega:   opts.map(o=>bsAll(evalS,o.K,T,state.rate,getIVat(o,evalS),o.type).vega),
       };
     }
-    const callPts=greekPoints(callOpts);
-    const putPts=greekPoints(putOpts);
+    const callPts=greekPoints(callOpts,spot);
+    const putPts=greekPoints(putOpts,spot);
+
+    // Scenario overlay (only when slider active and scenSpot ≠ spot)
+    const showScen=scenSpot!==null&&Math.abs(scenSpot-spot)>0.5;
+    const callPtsScen=showScen?greekPoints(callOpts,scenSpot):null;
+    const putPtsScen =showScen?greekPoints(putOpts, scenSpot):null;
 
     // Spot line index: closest strike to current spot in merged label set
     const allStrikes=[...new Set([...callOpts.map(o=>o.K),...putOpts.map(o=>o.K)])].sort((a,b)=>a-b);
     const spotStrikeIdx=allStrikes.reduce((bi,K,i)=>Math.abs(K-spot)<Math.abs(allStrikes[bi]-spot)?i:bi,0);
+    const scenStrikeIdx=scenSpot!==null?allStrikes.reduce((bi,K,i)=>Math.abs(K-scenSpot)<Math.abs(allStrikes[bi]-scenSpot)?i:bi,0):null;
+
+    // Vertical annotation plugin (draw spot + scenario spot lines)
+    const spotVlinePlugin={
+      id:'gSpotVline',
+      afterDraw(ch){
+        const xScale=ch.scales.x;
+        const yScale=ch.scales.y;
+        if(!xScale||!yScale) return;
+        const ctx2=ch.ctx;
+        // Draw current spot line (blue dashed)
+        if(spotStrikeIdx>=0&&spotStrikeIdx<allStrikes.length){
+          const xPos=xScale.getPixelForValue(spotStrikeIdx);
+          ctx2.save();
+          ctx2.setLineDash([3,3]);
+          ctx2.strokeStyle='rgba(88,166,255,0.5)';
+          ctx2.lineWidth=1;
+          ctx2.beginPath();ctx2.moveTo(xPos,yScale.top);ctx2.lineTo(xPos,yScale.bottom);ctx2.stroke();
+          ctx2.fillStyle='rgba(88,166,255,0.8)';
+          ctx2.font='8px sans-serif';
+          ctx2.textAlign='center';
+          ctx2.fillText('$'+spot.toFixed(0),xPos,yScale.top+8);
+          ctx2.restore();
+        }
+        // Draw scenario spot line (yellow dashed)
+        if(showScen&&scenStrikeIdx!==null&&scenStrikeIdx>=0&&scenStrikeIdx<allStrikes.length){
+          const xPos=xScale.getPixelForValue(scenStrikeIdx);
+          ctx2.save();
+          ctx2.setLineDash([4,2]);
+          ctx2.strokeStyle='rgba(255,193,7,0.7)';
+          ctx2.lineWidth=1.5;
+          ctx2.beginPath();ctx2.moveTo(xPos,yScale.top);ctx2.lineTo(xPos,yScale.bottom);ctx2.stroke();
+          ctx2.fillStyle='rgba(255,193,7,0.9)';
+          ctx2.font='8px sans-serif';
+          ctx2.textAlign='center';
+          ctx2.fillText('$'+scenSpot.toFixed(0),xPos,yScale.top+18);
+          ctx2.restore();
+        }
+      }
+    };
 
     const cfgs=[
       {id:'gDeltaChart', label:'Delta Δ',  unit:'Δ (per share)',       callKey:'delta', putKey:'delta'},
@@ -4741,6 +5274,7 @@ function renderGreeksDashboard(){
       if(_greeksCharts[cfg.id]){_greeksCharts[cfg.id].destroy();delete _greeksCharts[cfg.id];}
 
       const datasets=[];
+      // Current spot lines
       if(showCall&&callPts.labels.length>0) datasets.push({
         label:'Calls', data:callPts[cfg.callKey], labels:callPts.labels,
         borderColor:'#58a6ff', backgroundColor:'rgba(88,166,255,0.08)',
@@ -4753,10 +5287,28 @@ function renderGreeksDashboard(){
         borderWidth:1.5, pointRadius:2, pointHoverRadius:4,
         pointBackgroundColor:'#f85149', fill:false, tension:0.3,
       });
+      // Scenario overlay lines (dashed, same colors but dimmed with gold tint)
+      if(showScen&&callPtsScen){
+        if(showCall&&callPtsScen.labels.length>0) datasets.push({
+          label:`Calls @ $${scenSpot.toFixed(0)}`, data:callPtsScen[cfg.callKey],
+          borderColor:'#ffc107', backgroundColor:'transparent',
+          borderWidth:1.5, borderDash:[5,3],
+          pointRadius:2, pointHoverRadius:4,
+          pointBackgroundColor:'#ffc107', fill:false, tension:0.3,
+        });
+        if(showPut&&putPtsScen.labels.length>0) datasets.push({
+          label:`Puts @ $${scenSpot.toFixed(0)}`, data:putPtsScen[cfg.putKey],
+          borderColor:'#ff9800', backgroundColor:'transparent',
+          borderWidth:1.5, borderDash:[5,3],
+          pointRadius:2, pointHoverRadius:4,
+          pointBackgroundColor:'#ff9800', fill:false, tension:0.3,
+        });
+      }
       if(!datasets.length){
         _greeksCharts[cfg.id]=null; continue;
       }
 
+      const adjIV=scenSpot?state.iv*Math.pow(spot/scenSpot,rho):state.iv;
       _greeksCharts[cfg.id]=new Chart(canvas,{
         type:'line',
         data:{
@@ -4764,6 +5316,7 @@ function renderGreeksDashboard(){
           labels: showCall&&callPts.labels.length?callPts.labels:putPts.labels,
           datasets,
         },
+        plugins:[spotVlinePlugin],
         options:{
           responsive:true, maintainAspectRatio:false, animation:false,
           plugins:{
@@ -4772,7 +5325,10 @@ function renderGreeksDashboard(){
               backgroundColor:'#161b22',borderColor:'#30363d',borderWidth:1,
               titleColor:'#c9d1d9',bodyColor:'#8b949e',
               callbacks:{
-                title:i=>`Strike: ${i[0].label} · Spot: $${spot.toFixed(2)}`,
+                title:i=>{
+                  const base=`Strike: ${i[0].label} · Spot: $${spot.toFixed(2)}`;
+                  return scenSpot?base+` · Scen: $${scenSpot.toFixed(0)} (IV→${(adjIV*100).toFixed(1)}%)`:base;
+                },
                 label:i=>{const a=Math.abs(i.raw);return`${i.dataset.label} ${cfg.label}: ${i.raw<0?'-':''}${a.toFixed(4)}`;}
               }
             },
@@ -4794,6 +5350,131 @@ function renderGreeksDashboard(){
         }
       });
     }
+    // ── Scenario price info + comparison table ──
+    const priceInfoEl=document.getElementById('gScenPriceInfo');
+    const scTableEl=document.getElementById('gScenTable');
+
+    if(!showScen){
+      if(priceInfoEl) priceInfoEl.style.display='none';
+      if(scTableEl)   scTableEl.style.display='none';
+    } else {
+      // ATM strike (closest to current spot)
+      const atmK=allStrikes.length?allStrikes.reduce((b,K)=>Math.abs(K-spot)<Math.abs(b-spot)?K:b,allStrikes[0]):null;
+
+      // Price info line (ATM call + put)
+      if(priceInfoEl&&atmK!=null){
+        const buildPriceInfo=(type)=>{
+          const o=callOpts.concat(putOpts).find(x=>x.K===atmK&&x.type===type);
+          if(!o) return '';
+          const iv0=getIVat(o,spot), ivS=getIVat(o,scenSpot);
+          // Apply same mktOffset as P&L chart so prices are consistent
+          const bsAt0=bsPrice(spot,    atmK,T,state.rate,iv0,type);
+          const mktOff=(liveChainMid(atmK,selExp,type)??bsAt0)-bsAt0;
+          const p0=bsAt0+mktOff;
+          const pS=bsPrice(scenSpot,atmK,T,state.rate,ivS,type)+mktOff;
+          const dP=pS-p0, pct=p0>0.001?dP/p0*100:0;
+          const sign=dP>=0?'+':'';
+          const col=dP>=0?'#3fb950':'#f85149';
+          return `<span style="margin-right:12px">${type} ($${atmK}): `
+            +`<span style="color:var(--txt)">$${p0.toFixed(2)}</span> → `
+            +`<span style="color:${col};font-weight:600">$${pS.toFixed(2)} `
+            +`(${sign}$${dP.toFixed(2)}, ${sign}${pct.toFixed(1)}%)</span></span>`;
+        };
+        const infoHTML=buildPriceInfo('call')+'&nbsp;'+buildPriceInfo('put');
+        priceInfoEl.innerHTML=`<span style="color:var(--mut)">Market-anchored option prices — current → scenario:</span> `+infoHTML;
+        priceInfoEl.style.display='';
+      }
+
+      // Comparison table
+      if(scTableEl){
+        const fmt4=v=>(v>=0?'':'-')+Math.abs(v).toFixed(4);
+        const fmtIV=v=>(v*100).toFixed(1)+'%';
+        const diff=(a,b,inv=false)=>{
+          const d=b-a; if(Math.abs(d)<1e-6) return '';
+          const up=inv?d<0:d>0;
+          const col=up?'#3fb950':'#f85149';
+          const sign=d>=0?'+':'';
+          return `<span style="color:${col}">${sign}${d.toFixed(4)}</span>`;
+        };
+        const diffP=(a,b)=>{
+          const d=b-a; if(Math.abs(d)<0.001) return '';
+          const col=d>0?'#3fb950':'#f85149';
+          const sign=d>=0?'+':'';
+          return `<span style="color:${col}">${sign}$${d.toFixed(2)}</span>`;
+        };
+        const diffIV=(a,b)=>{
+          const d=(b-a)*100; if(Math.abs(d)<0.05) return '';
+          const col=d>0?'#3fb950':'#f85149';
+          const sign=d>=0?'+':'';
+          return `<span style="color:${col}">(${sign}${d.toFixed(1)}pp)</span>`;
+        };
+
+        const thStyle='padding:2px 5px;text-align:right;border-bottom:1px solid #30363d;white-space:nowrap';
+        const thL='padding:2px 5px;text-align:left;border-bottom:1px solid #30363d;white-space:nowrap';
+        const tdStyle='padding:2px 5px;text-align:right;white-space:nowrap;border-bottom:1px solid #21262d';
+        const tdL='padding:2px 5px;text-align:left;white-space:nowrap;border-bottom:1px solid #21262d';
+
+        const scenSpotFmt='$'+scenSpot.toFixed(0);
+        const spotFmt='$'+spot.toFixed(0);
+
+        let html=`<div style="font-size:8px;color:var(--mut);margin-bottom:3px">Greeks & prices: current spot ${spotFmt} vs scenario ${scenSpotFmt} `
+          +`<span style="color:var(--ylw)">(prices anchored to live market mid — consistent with P&L chart)</span></div>
+<table style="border-collapse:collapse;font-size:8px;color:var(--txt);min-width:700px;width:100%">
+<thead>
+<tr style="color:var(--mut);background:var(--sur2)">
+  <th style="${thL}">Strike</th>
+  <th style="${thL}">Type</th>
+  <th style="${thStyle}">IV (${spotFmt})</th>
+  <th style="${thStyle}">IV (${scenSpotFmt})</th>
+  <th style="${thStyle}">Price (${spotFmt})</th>
+  <th style="${thStyle}">Price (${scenSpotFmt})</th>
+  <th style="${thStyle}">Δ (${spotFmt})</th>
+  <th style="${thStyle}">Δ (${scenSpotFmt})</th>
+  <th style="${thStyle}">Γ (${spotFmt})</th>
+  <th style="${thStyle}">Γ (${scenSpotFmt})</th>
+  <th style="${thStyle}">Θ/d (${spotFmt})</th>
+  <th style="${thStyle}">Θ/d (${scenSpotFmt})</th>
+  <th style="${thStyle}">ν (${spotFmt})</th>
+  <th style="${thStyle}">ν (${scenSpotFmt})</th>
+</tr>
+</thead><tbody>`;
+
+        const allOptsForTable=[...callOpts,...putOpts].sort((a,b)=>a.K-b.K||(a.type==='call'?-1:1));
+        for(const o of allOptsForTable){
+          const iv0=getIVat(o,spot), ivS=getIVat(o,scenSpot);
+          const g0=bsAll(spot,    o.K,T,state.rate,iv0,o.type);
+          const gS=bsAll(scenSpot,o.K,T,state.rate,ivS,o.type);
+          // Market-anchor offset: same correction as P&L chart so prices are consistent
+          const bsAt0=bsPrice(spot,o.K,T,state.rate,iv0,o.type);
+          const mktOff=(liveChainMid(o.K,o.exp,o.type)??bsAt0)-bsAt0;
+          const p0=bsAt0+mktOff;
+          const pS=bsPrice(scenSpot,o.K,T,state.rate,ivS,o.type)+mktOff;
+          const isAtm=o.K===atmK;
+          const rowBg=isAtm?'background:rgba(255,193,7,0.06)':'';
+          const typeCol=o.type==='call'?'#58a6ff':'#f85149';
+          html+=`<tr style="${rowBg}">
+  <td style="${tdL};font-family:monospace${isAtm?';font-weight:600;color:var(--ylw)':''}">$${o.K}</td>
+  <td style="${tdL};color:${typeCol}">${o.type}</td>
+  <td style="${tdStyle}">${fmtIV(iv0)}</td>
+  <td style="${tdStyle}">${fmtIV(ivS)} ${diffIV(iv0,ivS)}</td>
+  <td style="${tdStyle}">$${p0.toFixed(2)}</td>
+  <td style="${tdStyle}">$${pS.toFixed(2)} ${diffP(p0,pS)}</td>
+  <td style="${tdStyle}">${fmt4(g0.delta)}</td>
+  <td style="${tdStyle}">${fmt4(gS.delta)} ${diff(g0.delta,gS.delta,o.type==='put')}</td>
+  <td style="${tdStyle}">${fmt4(g0.gamma)}</td>
+  <td style="${tdStyle}">${fmt4(gS.gamma)} ${diff(g0.gamma,gS.gamma)}</td>
+  <td style="${tdStyle}">${fmt4(g0.theta)}</td>
+  <td style="${tdStyle}">${fmt4(gS.theta)} ${diff(g0.theta,gS.theta,true)}</td>
+  <td style="${tdStyle}">${fmt4(g0.vega)}</td>
+  <td style="${tdStyle}">${fmt4(gS.vega)} ${diff(g0.vega,gS.vega)}</td>
+</tr>`;
+        }
+        html+='</tbody></table>';
+        scTableEl.innerHTML=html;
+        scTableEl.style.display='';
+      }
+    }
+
     return; // done with live mode
   }
 
@@ -5039,7 +5720,7 @@ async function addCmpTicker(ticker){
   try{
     let result=null;
     if(state.liveSource==='saxo') result=await _cmpFetchSaxo(ticker,statusEl);
-    else if(state.liveSource==='ibkr'){ if(statusEl) statusEl.textContent='IBKR not yet implemented — use Yahoo or Saxo'; return; }
+    else if(state.liveSource==='ibkr') result=await _cmpFetchIbkr(ticker,statusEl);
     else result=await _cmpFetchYahoo(ticker,statusEl);
     if(!result) return;
     _cmpTickers.push({ticker,...result});
@@ -5211,7 +5892,7 @@ function updateCmpControls(){
   if(note){
     const src=state.liveSource;
     note.textContent=src==='saxo'?'Additional tickers fetched via Saxo (requires active Saxo session)'
-      :src==='ibkr'?'IBKR not yet available — use Yahoo or Saxo'
+      :src==='ibkr'?'Additional tickers fetched via IBKR Gateway (requires active gateway session)'
       :'Additional tickers fetched via Yahoo Finance (delayed)';
   }
   if(isSim) renderCmpSimList();
