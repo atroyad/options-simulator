@@ -2765,33 +2765,55 @@ async function fetchLiveData(){
     if(!chain) throw new Error('Yahoo options: no chain data returned');
 
     // Worker returns all expiry pages merged into chain.options[]
+    // Yahoo often returns garbage IV (1e-05 placeholder) — treat any IV < 1% as missing.
+    // liveChainIV() will back-solve from bid/ask mid via bsIV() when stored iv=0.
     const toDate=ts=>new Date(ts*1000).toISOString().slice(0,10);
+    const nowMs=Date.now();
     state.liveOptions=[];
     for(const page of (chain.options||[])){
       for(const o of (page.calls||[])){
-        if(o.impliedVolatility>0) state.liveOptions.push({K:o.strike,iv:o.impliedVolatility,type:'call',exp:toDate(o.expiration),bid:o.bid,ask:o.ask});
+        const bid=o.bid||0, ask=o.ask||0;
+        if(bid<=0&&ask<=0) continue;
+        const iv=o.impliedVolatility>0.01?o.impliedVolatility:0; // discard garbage IVs
+        state.liveOptions.push({K:o.strike,iv,type:'call',exp:toDate(o.expiration),bid,ask});
       }
       for(const o of (page.puts||[])){
-        if(o.impliedVolatility>0) state.liveOptions.push({K:o.strike,iv:o.impliedVolatility,type:'put',exp:toDate(o.expiration),bid:o.bid,ask:o.ask});
+        const bid=o.bid||0, ask=o.ask||0;
+        if(bid<=0&&ask<=0) continue;
+        const iv=o.impliedVolatility>0.01?o.impliedVolatility:0;
+        state.liveOptions.push({K:o.strike,iv,type:'put',exp:toDate(o.expiration),bid,ask});
       }
     }
 
-    // Set global IV: median IV of liquid near-ATM calls (±15% moneyness, bid>0, IV 5-500%)
-    // Using median rather than nearest-strike avoids picking stale outlier strikes.
-    const liquidCalls=state.liveOptions.filter(o=>
-      o.type==='call' && o.bid>0 && o.iv>0.05 && o.iv<5.0 &&
-      Math.abs(o.K-spot)/spot<0.15
-    );
-    if(liquidCalls.length>0){
-      const sorted=[...liquidCalls].sort((a,b)=>a.iv-b.iv);
-      const medIV=sorted[Math.floor(sorted.length/2)].iv;
-      syncIV(Math.round(medIV*100));
-    } else {
-      // Last-resort fallback: any call with reasonable IV
-      const anyCalls=state.liveOptions.filter(o=>o.type==='call'&&o.iv>0.05&&o.iv<5.0);
-      if(anyCalls.length){
-        const atm=anyCalls.reduce((b,o)=>Math.abs(o.K-spot)<Math.abs(b.K-spot)?o:b,anyCalls[0]);
-        syncIV(Math.round(atm.iv*100));
+    // Set global IV from near-ATM liquid calls.
+    // If Yahoo IVs are garbage (stored as 0), back-solve from bid/ask mid via bsIV().
+    {
+      const nearATM=state.liveOptions.filter(o=>
+        o.type==='call' && o.bid>0 && Math.abs(o.K-spot)/spot<0.15
+      );
+      // Prefer stored IV if Yahoo provided real values
+      let ivSamples=nearATM.filter(o=>o.iv>0.05&&o.iv<5.0).map(o=>o.iv);
+      // Fall back: back-solve from mid for nearest-expiry ATM calls
+      if(!ivSamples.length){
+        const nearExp=state.liveOptions
+          .filter(o=>o.type==='call'&&o.bid>0&&Math.abs(o.K-spot)/spot<0.15)
+          .sort((a,b)=>a.exp.localeCompare(b.exp));
+        const firstExp=nearExp[0]?.exp;
+        if(firstExp){
+          const expCalls=nearExp.filter(o=>o.exp===firstExp);
+          for(const o of expCalls){
+            const T=(new Date(o.exp).getTime()-nowMs)/(365.25*24*3600*1000);
+            if(T<=0) continue;
+            const mid=(o.bid+o.ask)/2;
+            const iv=bsIV(mid,spot,o.K,T,state.rate,'call');
+            if(iv>0.05&&iv<5.0) ivSamples.push(iv);
+          }
+        }
+      }
+      if(ivSamples.length){
+        const sorted=[...ivSamples].sort((a,b)=>a-b);
+        const medIV=sorted[Math.floor(sorted.length/2)];
+        syncIV(Math.round(medIV*100));
       }
     }
 
