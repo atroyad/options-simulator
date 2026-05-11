@@ -2765,23 +2765,26 @@ async function fetchLiveData(){
     if(!chain) throw new Error('Yahoo options: no chain data returned');
 
     // Worker returns all expiry pages merged into chain.options[]
-    // Yahoo often returns garbage IV (1e-05 placeholder) — treat any IV < 1% as missing.
-    // liveChainIV() will back-solve from bid/ask mid via bsIV() when stored iv=0.
+    // Yahoo often returns bid=0/ask=0 for most strikes (delayed data) but lastPrice is reliable.
+    // Yahoo IVs are garbage (1e-05 placeholder) — treat any IV < 1% as missing;
+    // liveChainIV() will back-solve from mid via bsIV() when stored iv=0.
     const toDate=ts=>new Date(ts*1000).toISOString().slice(0,10);
     const nowMs=Date.now();
     state.liveOptions=[];
     for(const page of (chain.options||[])){
       for(const o of (page.calls||[])){
-        const bid=o.bid||0, ask=o.ask||0;
-        if(bid<=0&&ask<=0) continue;
-        const iv=o.impliedVolatility>0.01?o.impliedVolatility:0; // discard garbage IVs
-        state.liveOptions.push({K:o.strike,iv,type:'call',exp:toDate(o.expiration),bid,ask});
+        const bid=o.bid||0, ask=o.ask||0, last=o.lastPrice||0;
+        if(bid<=0&&ask<=0&&last<=0) continue; // skip truly empty rows
+        const mid=bid>0&&ask>0?(bid+ask)/2:last; // prefer spread mid, fall back to last
+        const iv=o.impliedVolatility>0.01?o.impliedVolatility:0;
+        state.liveOptions.push({K:o.strike,iv,type:'call',exp:toDate(o.expiration),bid,ask,mid});
       }
       for(const o of (page.puts||[])){
-        const bid=o.bid||0, ask=o.ask||0;
-        if(bid<=0&&ask<=0) continue;
+        const bid=o.bid||0, ask=o.ask||0, last=o.lastPrice||0;
+        if(bid<=0&&ask<=0&&last<=0) continue;
+        const mid=bid>0&&ask>0?(bid+ask)/2:last;
         const iv=o.impliedVolatility>0.01?o.impliedVolatility:0;
-        state.liveOptions.push({K:o.strike,iv,type:'put',exp:toDate(o.expiration),bid,ask});
+        state.liveOptions.push({K:o.strike,iv,type:'put',exp:toDate(o.expiration),bid,ask,mid});
       }
     }
 
