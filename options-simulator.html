@@ -2776,10 +2776,22 @@ async function fetchLiveData(){
       }
     }
 
-    // Set global IV to ATM call IV from nearest expiry
-    const nearestCalls=(chain.options[0]?.calls||[]);
-    const atmCall=nearestCalls.length>0?nearestCalls.reduce((b,o)=>Math.abs(o.strike-spot)<Math.abs(b.strike-spot)?o:b,nearestCalls[0]):null;
-    if(atmCall?.impliedVolatility>0) syncIV(Math.round(atmCall.impliedVolatility*100));
+    // Set global IV to ATM call IV — prefer nearest expiry, fall back to any expiry
+    const nearestCalls=(chain.options[0]?.calls||[]).filter(o=>o.impliedVolatility>0.01);
+    let atmIVpct=0;
+    if(nearestCalls.length>0){
+      const atm=nearestCalls.reduce((b,o)=>Math.abs(o.strike-spot)<Math.abs(b.strike-spot)?o:b,nearestCalls[0]);
+      atmIVpct=Math.round(atm.impliedVolatility*100);
+    }
+    // Fallback: scan all loaded options for nearest-strike call with valid IV
+    if(!atmIVpct){
+      const allCalls=state.liveOptions.filter(o=>o.type==='call'&&o.iv>0.01);
+      if(allCalls.length){
+        const atm=allCalls.reduce((b,o)=>Math.abs(o.K-spot)<Math.abs(b.K-spot)?o:b,allCalls[0]);
+        atmIVpct=Math.round(atm.iv*100);
+      }
+    }
+    if(atmIVpct>0) syncIV(atmIVpct);
 
     // ── Fit smile parameters — only on first load, not on auto-refresh ──
     if(!_smileFitted){
